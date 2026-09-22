@@ -191,8 +191,8 @@ const getProductBySlug = async (req, res, next) => {
         variants,
         reviews,
         stats: {
-          total_reviews: ratingStat.total_reviews,
-          avg_rating: Number(ratingStat.avg_rating.toFixed(1))
+          total_reviews: Number(ratingStat?.total_reviews || 0),
+          avg_rating: Number(parseFloat(ratingStat?.avg_rating || 5.0).toFixed(1))
         }
       }
     });
