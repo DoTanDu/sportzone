@@ -53,7 +53,7 @@ INSERT INTO products (id, category_id, brand_id, name, slug, sku, short_descript
 
 (2, 6, 5, 'Giày Đá Bóng Mizuno Morelia Neo 3 Pro AS', 'giay-mizuno-morelia-neo-3-pro-as', 'MIZ-NEO3-PRO-01', 'Chất liệu da Kangaroo siêu mềm, cảm giác bóng chân thật tuyệt đối.', 'Dòng giày làm nên huyền thoại của Mizuno tại thị trường phủi Việt Nam. Da thật cao cấp, đế đinh dăm bám sân kể cả khi trời mưa nhỏ.', 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?w=600', 2790000, 1, 1, 980, 52),
 
-(3, 8, 7, 'Quả Bóng Đá Động Lực FIFA Quality Pro UHV 2.05', 'qua-bong-da-dong-luc-uhv-205', 'DL-BALL-UHV205', 'Bóng thi đấu chính thức tại giải V-League đạt chuẩn FIFA Quality Pro.', 'Được may thủ công kết hợp ép nhiệt chất lượng cao. Độ nảy chuẩn xác, quỹ đạo bay ổn định không rung lắc.', 'https://images.unsplash.com/photo-1614632537197-1871f30ce5a5?w=600', 890000, 1, 1, 750, 120),
+(3, 8, 7, 'Quả Bóng Đá Động Lực FIFA Quality Pro UHV 2.05', 'qua-bong-da-dong-luc-uhv-205', 'DL-BALL-UHV205', 'Bóng thi đấu chính thức tại giải V-League đạt chuẩn FIFA Quality Pro.', 'Được may thủ công kết hợp ép nhiệt chất lượng cao. Độ nảy chuẩn xác, quỹ đạo bay ổn định không rung lắc.', 'assets/images/ball_dongluc_uhv205.jpg', 890000, 1, 1, 750, 120),
 
 (4, 9, 3, 'Vợt Cầu Lông Yonex Astrox 88D Pro', 'vot-cau-long-yonex-astrox-88d-pro', 'YONEX-AX88D-PRO', 'Vợt chuyên công cho cầu sau, trợ lực đập cầu uy lực chuẩn thi đấu quốc tế.', 'Dành cho người chơi có lực cổ tay tốt đến khá, thiết kế cán và khung cải tiến từ công nghệ Namd cho cú smash cắm và hiểm hóc.', 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=600', 3850000, 1, 1, 2300, 43),
 

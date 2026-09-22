@@ -250,3 +250,56 @@ function formatVND(amount) {
   if (isNaN(amount)) return '0 đ';
   return Number(amount).toLocaleString('vi-VN') + ' đ';
 }
+
+// Modal xác nhận thao tác giao diện đẹp, loại bỏ hoàn toàn window.confirm()
+function showConfirmModal({
+  title = 'Xác Nhận Thao Tác',
+  message = 'Bạn có chắc chắn muốn thực hiện hành động này?',
+  icon = 'fa-triangle-exclamation',
+  confirmText = 'Xác Nhận',
+  cancelText = 'Hủy Bỏ',
+  isDestructive = true,
+  onConfirm
+} = {}) {
+  const modal = document.getElementById('generic-modal');
+  const modalContent = document.getElementById('generic-modal-content');
+  if (!modal || !modalContent) {
+    if (window.confirm(message)) {
+      if (typeof onConfirm === 'function') onConfirm();
+    }
+    return;
+  }
+
+  modalContent.innerHTML = `
+    <div style="text-align: center; padding: 12px 6px 8px; max-width: 440px; margin: 0 auto;">
+      <div style="width: 58px; height: 58px; border-radius: 50%; background: ${isDestructive ? 'rgba(255, 51, 102, 0.12)' : 'rgba(0, 240, 255, 0.12)'}; color: ${isDestructive ? 'var(--neon-red)' : 'var(--neon-cyan)'}; display: inline-flex; align-items: center; justify-content: center; font-size: 1.6rem; margin-bottom: 16px; border: 1px solid ${isDestructive ? 'rgba(255, 51, 102, 0.3)' : 'rgba(0, 240, 255, 0.3)'};">
+        <i class="fa-solid ${icon}"></i>
+      </div>
+      <h3 style="font-size: 1.25rem; font-weight: 800; color: #fff; margin-bottom: 8px;">${title}</h3>
+      <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 24px;">${message}</p>
+      
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button type="button" class="btn btn-outline" id="btn-custom-dialog-cancel" style="min-width: 110px;">${cancelText}</button>
+        <button type="button" class="btn ${isDestructive ? 'btn-primary' : 'btn-cyan'}" id="btn-custom-dialog-confirm" style="min-width: 110px; ${isDestructive ? 'background: var(--neon-red); border-color: var(--neon-red);' : ''}">
+          ${confirmText}
+        </button>
+      </div>
+    </div>
+  `;
+
+  modal.classList.add('active');
+
+  const btnCancel = document.getElementById('btn-custom-dialog-cancel');
+  const btnConfirm = document.getElementById('btn-custom-dialog-confirm');
+
+  const closeDialog = () => modal.classList.remove('active');
+
+  btnCancel.onclick = () => closeDialog();
+  btnConfirm.onclick = async () => {
+    closeDialog();
+    if (typeof onConfirm === 'function') {
+      await onConfirm();
+    }
+  };
+}
+
