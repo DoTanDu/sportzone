@@ -89,12 +89,13 @@ const store = {
     const userBtn = document.getElementById('nav-user-btn');
     const adminLink = document.getElementById('nav-admin-link');
     const profileLink = document.getElementById('nav-profile-link');
+    const quickAdminBtn = document.getElementById('nav-quick-admin-btn');
 
     if (userBtn) {
       if (this.user) {
         userBtn.innerHTML = `
-          <i class="fa-solid fa-user-check" style="color: var(--neon-cyan)"></i>
-          <span style="font-size: 0.85rem; font-weight: 700; margin-left: 6px;">${this.user.full_name.split(' ').pop()}</span>
+          <i class="fa-solid fa-circle-user" style="color: var(--neon-cyan)"></i>
+          <span>${this.user.full_name.split(' ').pop()}</span>
         `;
         userBtn.title = `Tài khoản: ${this.user.full_name} (${this.user.email})`;
       } else {
@@ -109,10 +110,11 @@ const store = {
 
     if (adminLink) {
       // Hiển thị nút vào Quản trị Admin nếu có quyền admin/staff
-      if (this.user && (this.user.role === 'admin' || this.user.role === 'staff')) {
-        adminLink.style.display = 'inline-flex';
-      } else {
-        adminLink.style.display = 'none';
+      const isAdminOrStaff = this.user && (this.user.role === 'admin' || this.user.role === 'staff');
+      adminLink.style.display = isAdminOrStaff ? 'inline-flex' : 'none';
+      if (quickAdminBtn) {
+        // Nếu đã hiện link Quản Trị trên menu thì ẩn nút quick admin phụ để tránh thừa thãi
+        quickAdminBtn.style.display = isAdminOrStaff ? 'none' : 'inline-flex';
       }
     }
   }

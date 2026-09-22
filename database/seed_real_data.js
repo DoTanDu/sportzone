@@ -144,7 +144,7 @@ async function seedRealData() {
 - Da PU cao cấp nhập khẩu kết hợp công nghệ ép nhiệt không đường may giúp bóng chống thấm nước 100%.
 - Ruột bóng bằng cao su đặc biệt giữ hơi cực lâu, độ đàn hồi chuẩn xác tiêu chuẩn FIFA.
 - Quỹ đạo bay ổn định tuyệt đối, không lắc đảo khi sút xa hoặc tạt bóng cuộn.`,
-      thumbnail_url: 'https://images.unsplash.com/photo-1614632537197-1871f30ce5a5?w=700',
+      thumbnail_url: 'assets/images/ball_dongluc_uhv205.jpg',
       base_price: 890000,
       is_featured: 1,
       view_count: 1980,
@@ -167,7 +167,7 @@ async function seedRealData() {
 - Mút Contact Plus Foam 4mm hấp thụ lực sút cực mạnh và dính bóng tối đa trong cả trời mưa lẫn khô ráo.
 - Công nghệ Grip3 ôm sát ngón trỏ và ngón út, gia tăng diện tích tiếp xúc với bóng.
 - Lưng găng bằng vải lưới thoáng khí thoát mồ hôi tối ưu.`,
-      thumbnail_url: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=700',
+      thumbnail_url: 'assets/images/nike_gk_gloves.jpg',
       base_price: 2150000,
       is_featured: 0,
       view_count: 850,
@@ -378,7 +378,7 @@ async function seedRealData() {
 - Bộ đệm Light BOOST nhẹ hơn 30% so với thế hệ tiền nhiệm, đàn hồi êm ái như bay trên mây.
 - Thân giày dệt Primeknit+ ôm khít bàn chân với độ co giãn linh hoạt và thoáng khí tối ưu.
 - Đế ngoài cao su lốp xe Continental bám đường ướt cực đỉnh, chống mài mòn vượt trội qua hàng nghìn kilomet.`,
-      thumbnail_url: 'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=700',
+      thumbnail_url: 'assets/images/adidas_ultraboost_light.jpg',
       base_price: 3650000,
       is_featured: 1,
       view_count: 3800,

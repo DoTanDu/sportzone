@@ -166,11 +166,13 @@ const app = {
       </section>
 
       <!-- Thương Hiệu Nổi Tiếng -->
-      <section class="container brands-strip">
-        <div class="brands-flex">
-          ${store.brands.map(b => `
-            <div class="brand-item" data-brand-id="${b.id}">${b.name}</div>
-          `).join('')}
+      <section class="brands-strip">
+        <div class="container">
+          <div class="brands-flex">
+            ${store.brands.map(b => `
+              <div class="brand-item" data-brand-id="${b.id}">${b.name}</div>
+            `).join('')}
+          </div>
         </div>
       </section>
 
@@ -1695,20 +1697,11 @@ const app = {
         </div>
       `;
 
-      // Gắn sự kiện Hủy đơn hàng
+      // Gắn sự kiện Hủy đơn hàng (Mở Modal hiện đại thay vì prompt)
       tabContent.querySelectorAll('.btn-cancel-order').forEach(btn => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', () => {
           const code = btn.dataset.code;
-          const reason = prompt(`Vui lòng nhập lý do bạn muốn hủy đơn hàng ${code}:`, 'Thay đổi nhu cầu mua sắm');
-          if (reason !== null) {
-            try {
-              const res = await api.cancelUserOrder(code, reason || 'Khách hủy');
-              showToast(res.message, 'success');
-              this.loadProfileOrdersTab();
-            } catch (cErr) {
-              showToast(cErr.message, 'error');
-            }
-          }
+          this.openCancelOrderModal(code);
         });
       });
 
@@ -1723,6 +1716,94 @@ const app = {
     } catch (err) {
       tabContent.innerHTML = `<div style="color: var(--neon-red); padding: 40px; text-align: center;">Lỗi tải đơn hàng: ${err.message}</div>`;
     }
+  },
+
+  // Modal xác nhận và chọn lý do hủy đơn hàng chuyên nghiệp
+  openCancelOrderModal(orderCode) {
+    const modal = document.getElementById('generic-modal');
+    const modalContent = document.getElementById('generic-modal-content');
+    if (!modal || !modalContent) return;
+
+    modalContent.innerHTML = `
+      <div style="text-align: center; margin-bottom: 20px;">
+        <div style="width: 58px; height: 58px; border-radius: 50%; background: rgba(255, 51, 102, 0.12); color: var(--neon-red); display: inline-flex; align-items: center; justify-content: center; font-size: 1.6rem; margin-bottom: 12px; border: 1px solid rgba(255, 51, 102, 0.3);">
+          <i class="fa-solid fa-ban"></i>
+        </div>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: #fff;">Xác Nhận Hủy Đơn Hàng</h2>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 4px;">
+          Mã đơn: <strong style="color: var(--neon-cyan); letter-spacing: 0.5px;">${orderCode}</strong>
+        </p>
+      </div>
+
+      <form id="form-cancel-user-order">
+        <div class="form-group">
+          <label class="form-label">Vui lòng chọn lý do hủy đơn *</label>
+          <select id="cancel-reason-preset" class="form-control" required style="font-weight: 500;">
+            <option value="Thay đổi nhu cầu mua sắm">Thay đổi nhu cầu mua sắm</option>
+            <option value="Muốn đổi kích cỡ (Size) hoặc mẫu mã sản phẩm khác">Muốn đổi kích cỡ (Size) hoặc mẫu mã sản phẩm khác</option>
+            <option value="Thời gian giao hàng dự kiến chưa phù hợp">Thời gian giao hàng dự kiến chưa phù hợp</option>
+            <option value="Muốn cập nhật lại địa chỉ nhận hàng">Muốn cập nhật lại địa chỉ nhận hàng</option>
+            <option value="Tìm thấy mức giá hoặc khuyến mãi tốt hơn">Tìm thấy mức giá hoặc khuyến mãi tốt hơn</option>
+            <option value="other">Lý do khác (Nhập chi tiết)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="cancel-custom-reason-wrap" style="display: none;">
+          <label class="form-label">Chi tiết lý do khác *</label>
+          <textarea id="cancel-custom-reason" class="form-control" rows="2" placeholder="Vui lòng nhập lý do cụ thể..."></textarea>
+        </div>
+
+        <div style="background: rgba(255, 183, 3, 0.08); border: 1px solid rgba(255, 183, 3, 0.25); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 22px; font-size: 0.84rem; color: #ffb703; display: flex; gap: 10px; align-items: flex-start; line-height: 1.45;">
+          <i class="fa-solid fa-triangle-exclamation" style="margin-top: 2px; flex-shrink: 0;"></i>
+          <span>Khi hủy đơn hàng, hệ thống sẽ tự động hoàn trả số lượng dụng cụ thể thao về kho. Bạn có thể đặt lại bất cứ lúc nào.</span>
+        </div>
+
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button type="button" class="btn btn-outline" id="btn-abort-cancel-order">Giữ Lại Đơn Hàng</button>
+          <button type="submit" class="btn btn-primary" style="background: var(--neon-red); border-color: var(--neon-red);">
+            <i class="fa-solid fa-xmark"></i> Xác Nhận Hủy
+          </button>
+        </div>
+      </form>
+    `;
+
+    modal.classList.add('active');
+
+    const presetSelect = document.getElementById('cancel-reason-preset');
+    const customWrap = document.getElementById('cancel-custom-reason-wrap');
+    const customInput = document.getElementById('cancel-custom-reason');
+
+    presetSelect.addEventListener('change', () => {
+      if (presetSelect.value === 'other') {
+        customWrap.style.display = 'block';
+        customInput.required = true;
+        customInput.focus();
+      } else {
+        customWrap.style.display = 'none';
+        customInput.required = false;
+      }
+    });
+
+    document.getElementById('btn-abort-cancel-order').addEventListener('click', () => {
+      modal.classList.remove('active');
+    });
+
+    document.getElementById('form-cancel-user-order').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let reason = presetSelect.value;
+      if (reason === 'other') {
+        reason = customInput.value.trim() || 'Khách hủy đơn';
+      }
+
+      try {
+        const res = await api.cancelUserOrder(orderCode, reason);
+        showToast(res.message || 'Đã hủy đơn hàng thành công!', 'success');
+        modal.classList.remove('active');
+        this.loadProfileOrdersTab();
+      } catch (cErr) {
+        showToast(cErr.message, 'error');
+      }
+    });
   },
 
   // 8.2 Tab Sổ Địa Chỉ
@@ -1849,18 +1930,26 @@ const app = {
         });
       });
 
-      // Xử lý xóa địa chỉ
+      // Xử lý xóa địa chỉ (Dùng showConfirmModal hiện đại)
       tabContent.querySelectorAll('.btn-del-addr').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          if (confirm('Bạn có chắc chắn muốn xóa địa chỉ nhận hàng này không?')) {
-            try {
-              await api.deleteAddress(btn.dataset.id);
-              showToast('Đã xóa địa chỉ thành công!', 'success');
-              this.loadProfileAddressesTab();
-            } catch (xErr) {
-              showToast(xErr.message, 'error');
+        btn.addEventListener('click', () => {
+          const addrId = btn.dataset.id;
+          showConfirmModal({
+            title: 'Xóa Địa Chỉ Nhận Hàng',
+            message: 'Bạn có chắc chắn muốn xóa địa chỉ này khỏi sổ địa chỉ giao hàng?',
+            confirmText: 'Xóa Địa Chỉ',
+            cancelText: 'Giữ Lại',
+            isDestructive: true,
+            onConfirm: async () => {
+              try {
+                await api.deleteAddress(addrId);
+                showToast('Đã xóa địa chỉ thành công!', 'success');
+                this.loadProfileAddressesTab();
+              } catch (xErr) {
+                showToast(xErr.message, 'error');
+              }
             }
-          }
+          });
         });
       });
 

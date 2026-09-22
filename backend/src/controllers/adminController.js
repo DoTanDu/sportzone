@@ -488,16 +488,9 @@ const updateCoupon = async (req, res, next) => {
 const deleteCoupon = async (req, res, next) => {
   try {
     const { id } = req.params;
-    // Kiểm tra xem coupon đã có khách dùng trong đơn hàng chưa
-    const used = await get('SELECT id FROM coupon_usages WHERE coupon_id = ? LIMIT 1', [id]);
-    if (used) {
-      // Đã có khách sử dụng thì chỉ tạm khóa để bảo toàn lịch sử đơn hàng
-      await run('UPDATE coupons SET is_active = 0 WHERE id = ?', [id]);
-      return res.json({ success: true, message: 'Mã giảm giá đã có khách hàng sử dụng trước đó, hệ thống đã chuyển sang Tạm Khóa để bảo toàn lịch sử hóa đơn.' });
-    }
-    // Nếu chưa từng dùng thì xóa hẳn
-    await run('DELETE FROM coupons WHERE id = ?', [id]);
-    res.json({ success: true, message: 'Đã xóa hoàn toàn mã giảm giá khỏi hệ thống.' });
+    // Tuyệt đối không xóa vĩnh viễn, chỉ chuyển trạng thái is_active = 0 (Tạm ẩn) để bảo toàn dữ liệu
+    await run('UPDATE coupons SET is_active = 0 WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Đã chuyển mã giảm giá sang trạng thái tạm ẩn.' });
   } catch (err) {
     next(err);
   }

@@ -3,10 +3,10 @@
    Phong cách Athletic Cyber & Năng Động Thể Thao
    ========================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap');
 
 :root {
-  /* Bảng màu Dark Slate thể thao cao cấp */
+  /* Bảng màu Dark Slate thể thao cao cấp (Giữ nguyên toàn bộ Theme thể thao) */
   --bg-darkest: #070a10;
   --bg-primary: #0d121d;
   --bg-surface: #141b2b;
@@ -37,9 +37,9 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-active: rgba(0, 240, 255, 0.5);
 
-  /* Fonts */
-  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Fonts - Plus Jakarta Sans chuẩn thể thao hiện đại, 100% tiếng Việt không lỗi font */
+  --font-heading: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /* Radius & Shadows */
   --radius-sm: 6px;
@@ -75,6 +75,8 @@ body {
   overflow-x: hidden;
   min-height: 100vh;
   position: relative;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Background Sporty Grid Overlay */
@@ -92,11 +94,12 @@ body::before {
   z-index: -1;
 }
 
-/* Typography Headings */
+/* Typography Headings - Căn chỉnh dấu tiếng Việt mượt mà, không va chạm ký tự */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   color: #ffffff;
 }
 
