@@ -1,10 +1,72 @@
--- ==========================================================
--- CƠ SỞ DỮ LIỆU WEBSITE BÁN DỤNG CỤ THỂ THAO (SPORTS STORE)
--- Phiên bản dành riêng cho: MySQL / MariaDB (5.7+, 8.0+)
+const fs = require('fs');
+const path = require('path');
+const sqlite3 = require('../backend/node_modules/sqlite3').verbose();
+
+const dbPath = path.resolve(__dirname, 'sports_store.db');
+const outputPath = path.resolve(__dirname, 'sportzone_mysql.sql');
+
+const db = new sqlite3.Database(dbPath);
+
+function query(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) return reject(err);
+      resolve(rows);
+    });
+  });
+}
+
+function escapeSqlString(val) {
+  if (val === null || val === undefined) return 'NULL';
+  if (typeof val === 'number') return val;
+  if (typeof val === 'boolean') return val ? 1 : 0;
+  // Convert string and escape single quotes and backslashes
+  const str = String(val)
+    .replace(/\\/g, '\\\\')
+    .replace(/\'/g, "\\'")
+    .replace(/\0/g, '\\0')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+  return `'${str}'`;
+}
+
+async function exportToMysql() {
+  console.log('🔄 Đang xuất dữ liệu từ SQLite sang MySQL...');
+
+  const tables = [
+    'users',
+    'addresses',
+    'categories',
+    'brands',
+    'products',
+    'product_images',
+    'product_variants',
+    'coupons',
+    'orders',
+    'order_items',
+    'order_timeline',
+    'carts',
+    'cart_items',
+    'reviews',
+    'wishlists',
+    'coupon_usages',
+    'payment_transactions',
+    'inventory_logs'
+  ];
+
+  let sql = `-- ==========================================================
+-- CƠ SỞ DỮ LIỆU SPORTZONE (WEBSITE BÁN DỤNG CỤ THỂ THAO)
+-- Dành riêng cho: MySQL / MariaDB (aaPanel, phpMyAdmin, MySQL 5.7+, 8.0+)
+-- Ngày tạo: ${new Date().toISOString()}
 -- ==========================================================
 
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+SET time_zone = "+07:00";
 
+-- XÓA BẢNG CŨ NẾU ĐÃ TỒN TẠI
 DROP TABLE IF EXISTS inventory_logs;
 DROP TABLE IF EXISTS payment_transactions;
 DROP TABLE IF EXISTS coupon_usages;
@@ -24,45 +86,49 @@ DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS addresses;
 DROP TABLE IF EXISTS users;
 
-SET FOREIGN_KEY_CHECKS = 1;
-
+-- ==========================================================
 -- 1. BẢNG NGƯỜI DÙNG (USERS)
+-- ==========================================================
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) DEFAULT NULL UNIQUE,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
-    phone VARCHAR(20) UNIQUE,
+    phone VARCHAR(20) DEFAULT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('customer', 'admin', 'staff') NOT NULL DEFAULT 'customer',
-    avatar_url VARCHAR(500),
+    avatar_url VARCHAR(500) DEFAULT NULL,
     status ENUM('active', 'inactive', 'banned') NOT NULL DEFAULT 'active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 2. SỔ ĐỊA CHỈ KHÁCH HÀNG (ADDRESSES)
+-- ==========================================================
+-- 2. SỔ ĐỊA CHỈ (ADDRESSES)
+-- ==========================================================
 CREATE TABLE addresses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     receiver_name VARCHAR(100) NOT NULL,
     receiver_phone VARCHAR(20) NOT NULL,
     street_address VARCHAR(255) NOT NULL,
-    ward VARCHAR(100),
-    district VARCHAR(100),
+    ward VARCHAR(100) DEFAULT NULL,
+    district VARCHAR(100) DEFAULT NULL,
     city_province VARCHAR(100) NOT NULL,
     is_default TINYINT(1) DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_addresses_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 3. DANH MỤC SẢN PHẨM (CATEGORIES)
+-- ==========================================================
 CREATE TABLE categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(120) NOT NULL UNIQUE,
-    icon VARCHAR(50),
-    image_url VARCHAR(500),
+    icon VARCHAR(50) DEFAULT NULL,
+    image_url VARCHAR(500) DEFAULT NULL,
     parent_id INT DEFAULT NULL,
     sort_order INT DEFAULT 0,
     is_active TINYINT(1) DEFAULT 1,
@@ -70,19 +136,23 @@ CREATE TABLE categories (
     CONSTRAINT fk_categories_parent FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 4. THƯƠNG HIỆU (BRANDS)
+-- ==========================================================
 CREATE TABLE brands (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(120) NOT NULL UNIQUE,
-    logo_url VARCHAR(500),
+    logo_url VARCHAR(500) DEFAULT NULL,
     description TEXT,
-    origin_country VARCHAR(50),
+    origin_country VARCHAR(50) DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 5. SẢN PHẨM CHÍNH (PRODUCTS)
+-- ==========================================================
 CREATE TABLE products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     category_id INT NOT NULL,
@@ -90,9 +160,9 @@ CREATE TABLE products (
     name VARCHAR(200) NOT NULL,
     slug VARCHAR(250) NOT NULL UNIQUE,
     sku VARCHAR(50) NOT NULL UNIQUE,
-    short_description VARCHAR(500),
+    short_description VARCHAR(500) DEFAULT NULL,
     description TEXT,
-    thumbnail_url VARCHAR(500),
+    thumbnail_url VARCHAR(500) DEFAULT NULL,
     base_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     is_featured TINYINT(1) DEFAULT 0,
     is_active TINYINT(1) DEFAULT 1,
@@ -104,7 +174,9 @@ CREATE TABLE products (
     CONSTRAINT fk_products_brand FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 6. HÌNH ẢNH CHI TIẾT SẢN PHẨM (PRODUCT_IMAGES)
+-- ==========================================================
+-- 6. HÌNH ẢNH SẢN PHẨM (PRODUCT_IMAGES)
+-- ==========================================================
 CREATE TABLE product_images (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id INT NOT NULL,
@@ -114,28 +186,32 @@ CREATE TABLE product_images (
     CONSTRAINT fk_images_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 7. BIẾN THỂ SẢN PHẨM (PRODUCT_VARIANTS)
+-- ==========================================================
 CREATE TABLE product_variants (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id INT NOT NULL,
     sku_variant VARCHAR(80) NOT NULL UNIQUE,
-    size VARCHAR(50),
-    color VARCHAR(50),
+    size VARCHAR(50) DEFAULT NULL,
+    color VARCHAR(50) DEFAULT NULL,
     price DECIMAL(12, 2) NOT NULL,
     compare_at_price DECIMAL(12, 2) DEFAULT NULL,
     stock_quantity INT NOT NULL DEFAULT 0,
     weight_grams INT DEFAULT 0,
-    image_url VARCHAR(500),
+    image_url VARCHAR(500) DEFAULT NULL,
     is_active TINYINT(1) DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_variants_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 8. MÃ GIẢM GIÁ (COUPONS)
+-- ==========================================================
 CREATE TABLE coupons (
     id INT AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(50) NOT NULL UNIQUE,
-    description VARCHAR(255),
+    description VARCHAR(255) DEFAULT NULL,
     discount_type ENUM('percentage', 'fixed_amount') NOT NULL,
     discount_value DECIMAL(12, 2) NOT NULL,
     min_order_value DECIMAL(12, 2) DEFAULT 0.00,
@@ -148,7 +224,9 @@ CREATE TABLE coupons (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 9. ĐƠN ĐẶT HÀNG (ORDERS)
+-- ==========================================================
 CREATE TABLE orders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     order_code VARCHAR(30) NOT NULL UNIQUE,
@@ -171,13 +249,15 @@ CREATE TABLE orders (
     CONSTRAINT fk_orders_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 10. CHI TIẾT ĐƠN HÀNG (ORDER_ITEMS)
+-- ==========================================================
 CREATE TABLE order_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     order_id INT NOT NULL,
     product_variant_id INT DEFAULT NULL,
     product_name VARCHAR(200) NOT NULL,
-    variant_label VARCHAR(150),
+    variant_label VARCHAR(150) DEFAULT NULL,
     unit_price DECIMAL(12, 2) NOT NULL,
     quantity INT NOT NULL,
     total_price DECIMAL(12, 2) NOT NULL,
@@ -185,18 +265,22 @@ CREATE TABLE order_items (
     CONSTRAINT fk_items_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
 -- 11. DÒNG THỜI GIAN ĐƠN HÀNG (ORDER_TIMELINE)
+-- ==========================================================
 CREATE TABLE order_timeline (
     id INT AUTO_INCREMENT PRIMARY KEY,
     order_id INT NOT NULL,
     status VARCHAR(50) NOT NULL,
-    note VARCHAR(255),
+    note VARCHAR(255) DEFAULT NULL,
     created_by VARCHAR(100) DEFAULT 'Hệ thống',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_timeline_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 12. GIỎ HÀNG (CARTS) VÀ CHI TIẾT GIỎ HÀNG (CART_ITEMS)
+-- ==========================================================
+-- 12. GIỎ HÀNG (CARTS)
+-- ==========================================================
 CREATE TABLE carts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT DEFAULT NULL,
@@ -206,6 +290,9 @@ CREATE TABLE carts (
     CONSTRAINT fk_carts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ==========================================================
+-- 13. CHI TIẾT GIỎ HÀNG (CART_ITEMS)
+-- ==========================================================
 CREATE TABLE cart_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cart_id INT NOT NULL,
@@ -218,7 +305,9 @@ CREATE TABLE cart_items (
     UNIQUE KEY unique_cart_variant (cart_id, product_variant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 13. ĐÁNH GIÁ SẢN PHẨM (REVIEWS)
+-- ==========================================================
+-- 14. ĐÁNH GIÁ SẢN PHẨM (REVIEWS)
+-- ==========================================================
 CREATE TABLE reviews (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id INT NOT NULL,
@@ -235,7 +324,9 @@ CREATE TABLE reviews (
     CONSTRAINT fk_reviews_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 14. DANH SÁCH YÊU THÍCH (WISHLISTS)
+-- ==========================================================
+-- 15. DANH SÁCH YÊU THÍCH (WISHLISTS)
+-- ==========================================================
 CREATE TABLE wishlists (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -246,7 +337,9 @@ CREATE TABLE wishlists (
     UNIQUE KEY unique_user_product (user_id, product_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 15. LỊCH SỬ SỬ DỤNG VOUCHER (COUPON_USAGES)
+-- ==========================================================
+-- 16. LỊCH SỬ SỬ DỤNG VOUCHER (COUPON_USAGES)
+-- ==========================================================
 CREATE TABLE coupon_usages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     coupon_id INT NOT NULL,
@@ -259,7 +352,9 @@ CREATE TABLE coupon_usages (
     UNIQUE KEY unique_coupon_user (coupon_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 16. GIAO DỊCH THANH TOÁN (PAYMENT_TRANSACTIONS)
+-- ==========================================================
+-- 17. GIAO DỊCH THANH TOÁN (PAYMENT_TRANSACTIONS)
+-- ==========================================================
 CREATE TABLE payment_transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     order_id INT NOT NULL,
@@ -273,7 +368,9 @@ CREATE TABLE payment_transactions (
     CONSTRAINT fk_transactions_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 17. NHẬT KÝ BIẾN ĐỘNG KHO (INVENTORY_LOGS)
+-- ==========================================================
+-- 18. NHẬT KÝ BIẾN ĐỘNG KHO (INVENTORY_LOGS)
+-- ==========================================================
 CREATE TABLE inventory_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_variant_id INT NOT NULL,
@@ -288,7 +385,9 @@ CREATE TABLE inventory_logs (
     CONSTRAINT fk_inventory_variant FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- CHỈ MỤC (INDEXES)
+-- ==========================================================
+-- TỐI ƯU HÓA CHỈ MỤC (INDEXES)
+-- ==========================================================
 CREATE INDEX idx_products_category ON products(category_id);
 CREATE INDEX idx_products_brand ON products(brand_id);
 CREATE INDEX idx_products_slug ON products(slug);
@@ -304,3 +403,45 @@ CREATE INDEX idx_wishlists_user ON wishlists(user_id);
 CREATE INDEX idx_coupon_usages_user ON coupon_usages(user_id, coupon_id);
 CREATE INDEX idx_inventory_logs_variant ON inventory_logs(product_variant_id);
 
+-- ==========================================================
+-- DỮ LIỆU THỰC TẾ (INSERT DATA)
+-- ==========================================================
+`;
+
+  for (const table of tables) {
+    const rows = await query(`SELECT * FROM ${table}`);
+    if (rows.length === 0) continue;
+
+    sql += `\n-- Dữ liệu bảng: ${table} (${rows.length} bản ghi)\n`;
+    const cols = Object.keys(rows[0]);
+    const colList = cols.map(c => `\`${c}\``).join(', ');
+
+    sql += `INSERT INTO \`${table}\` (${colList}) VALUES\n`;
+
+    const rowStrings = rows.map(r => {
+      const values = cols.map(c => {
+        let val = r[c];
+        // Handle boolean types stored as 0/1 or string
+        if (typeof val === 'string' && (val === 'true' || val === 'false')) {
+          val = val === 'true' ? 1 : 0;
+        }
+        return escapeSqlString(val);
+      });
+      return `(${values.join(', ')})`;
+    });
+
+    sql += rowStrings.join(',\n') + ';\n';
+  }
+
+  sql += `\nSET FOREIGN_KEY_CHECKS = 1;\n`;
+  sql += `\n-- HOÀN TẤT NẠP DỮ LIỆU SPORTZONE --\n`;
+
+  fs.writeFileSync(outputPath, sql, 'utf8');
+  console.log(`✅ Đã xuất thành công tệp MySQL: ${outputPath} (${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB)`);
+  db.close();
+}
+
+exportToMysql().catch(err => {
+  console.error('❌ Lỗi xuất dữ liệu:', err);
+  process.exit(1);
+});
