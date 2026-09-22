@@ -130,8 +130,8 @@ const updateOrderStatus = async (req, res, next) => {
               [item.quantity, item.product_variant_id]
             );
             await run(
-              'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
-              [item.quantity, variant.product_id]
+              'UPDATE products SET sold_count = CASE WHEN sold_count >= ? THEN sold_count - ? ELSE 0 END WHERE id = ?',
+              [item.quantity, item.quantity, variant.product_id]
             );
             await run(
               `INSERT INTO inventory_logs (product_variant_id, change_type, quantity_change, previous_quantity, new_quantity, reference_id, note, created_by)

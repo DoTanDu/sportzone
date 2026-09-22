@@ -1006,7 +1006,12 @@ const app = {
         this.renderCartDrawerContent(false);
       });
 
-      document.getElementById('btn-submit-order').addEventListener('click', async () => {
+      const btnSubmitOrder = document.getElementById('btn-submit-order');
+      let isSubmitting = false;
+
+      btnSubmitOrder.addEventListener('click', async () => {
+        if (isSubmitting) return;
+
         const name = document.getElementById('order-name').value.trim();
         const phone = document.getElementById('order-phone').value.trim();
         const address = document.getElementById('order-address').value.trim();
@@ -1022,6 +1027,10 @@ const app = {
           variant_id: it.variant_id,
           quantity: it.quantity
         }));
+
+        isSubmitting = true;
+        btnSubmitOrder.disabled = true;
+        btnSubmitOrder.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xử lý đặt hàng...';
 
         try {
           const res = await api.createOrder({
@@ -1135,6 +1144,9 @@ const app = {
           footer.style.display = 'none';
 
         } catch (err) {
+          isSubmitting = false;
+          btnSubmitOrder.disabled = false;
+          btnSubmitOrder.innerHTML = '<i class="fa-solid fa-check"></i> Xác Nhận Đặt Hàng Ngay';
           showToast(err.message, 'error');
         }
       });

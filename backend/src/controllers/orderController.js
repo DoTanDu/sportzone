@@ -1,6 +1,9 @@
 const { get, query, run, transaction } = require('../config/db');
 const { getPagination, formatPaginationResponse } = require('../utils/pagination');
 
+// Bộ đệm chống spam / double-click đặt trùng đơn
+const recentOrdersCache = new Map();
+
 // Tạo mã đơn hàng độc nhất
 const generateOrderCode = () => {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -21,6 +24,25 @@ const createOrder = async (req, res, next) => {
       payment_method = 'cod',
       note = ''
     } = req.body;
+
+    // Chống double-click tạo 2 đơn trùng lặp
+    const idempotencyKey = `${userId || req.headers['x-session-id'] || receiver_phone}_${JSON.stringify(items || [])}`;
+    const now = Date.now();
+    if (recentOrdersCache.has(idempotencyKey)) {
+      const lastTime = recentOrdersCache.get(idempotencyKey);
+      if (now - lastTime < 5000) {
+        return res.status(429).json({
+          success: false,
+          message: 'Đơn hàng của bạn đang được xử lý, vui lòng không nhấn đặt hàng liên tục!'
+        });
+      }
+    }
+    recentOrdersCache.set(idempotencyKey, now);
+    if (recentOrdersCache.size > 1000) {
+      for (const [k, time] of recentOrdersCache.entries()) {
+        if (now - time > 60000) recentOrdersCache.delete(k);
+      }
+    }
 
     // 1. Kiểm tra đầu vào cơ bản
     if (!receiver_name || !receiver_phone || !shipping_address) {
@@ -420,8 +442,8 @@ const cancelUserOrder = async (req, res, next) => {
 
             // Giảm sold_count của sản phẩm
             await run(
-              'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
-              [item.quantity, variant.product_id]
+              'UPDATE products SET sold_count = CASE WHEN sold_count >= ? THEN sold_count - ? ELSE 0 END WHERE id = ?',
+              [item.quantity, item.quantity, variant.product_id]
             );
 
             // Ghi log hoàn kho
