@@ -348,7 +348,7 @@ const admin = {
                   </td>
                   <td><span class="badge badge-sale">${p.category_name}</span></td>
                   <td><strong>${p.brand_name}</strong></td>
-                  <td style="font-weight: 700; color: var(--neon-cyan);">${formatVND(p.base_price)}</td>
+                  <td style="font-weight: 700; color: var(--neon-cyan); white-space: nowrap;">${formatVND(p.base_price)}</td>
                   <td>
                     <span class="badge ${p.total_stock > 10 ? 'badge-stock' : 'badge-low-stock'}">
                       ${p.total_stock} món (${p.variant_count} size/màu)
@@ -770,7 +770,7 @@ const admin = {
                     <small style="color: var(--text-dark);">${o.receiver_phone}</small>
                   </td>
                   <td style="max-width: 240px; font-size: 0.82rem;">${o.shipping_address}</td>
-                  <td style="font-weight: 800; color: #fff;">${formatVND(o.total_amount)}</td>
+                  <td style="font-weight: 800; color: #fff; white-space: nowrap;">${formatVND(o.total_amount)}</td>
                   <td>
                     <span class="badge ${o.payment_status === 'paid' ? 'badge-stock' : 'badge-sale'}">
                       ${o.payment_status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}

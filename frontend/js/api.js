@@ -245,10 +245,10 @@ function showToast(message, type = 'success') {
   }, 3500);
 }
 
-// Định dạng tiền tệ VND
+// Định dạng tiền tệ VND (dùng khoảng trắng không ngắt dòng tránh rớt chữ đ xuống dòng mới)
 function formatVND(amount) {
-  if (isNaN(amount)) return '0 đ';
-  return Number(amount).toLocaleString('vi-VN') + ' đ';
+  if (isNaN(amount) || amount === null) return '0\u00A0₫';
+  return Number(amount).toLocaleString('vi-VN') + '\u00A0₫';
 }
 
 // Modal xác nhận thao tác giao diện đẹp, loại bỏ hoàn toàn window.confirm()
