@@ -86,12 +86,21 @@ const api = {
       body: JSON.stringify(orderData)
     }),
   trackOrder: (code) => fetchApi(`/orders/track/${encodeURIComponent(code)}`),
+  getUserOrders: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/orders/my-orders?${query}`);
+  },
+  cancelUserOrder: (code, reason = 'Khách hàng đổi ý') =>
+    fetchApi(`/orders/${encodeURIComponent(code)}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason })
+    }),
 
   // Người dùng & Xác thực
-  login: (email, password) =>
+  login: (identifier, password) =>
     fetchApi('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ identifier, password })
     }),
   register: (userData) =>
     fetchApi('/auth/register', {
@@ -99,6 +108,58 @@ const api = {
       body: JSON.stringify(userData)
     }),
   getProfile: () => fetchApi('/auth/profile'),
+  updateProfile: (data) =>
+    fetchApi('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  changePassword: (old_password, new_password) =>
+    fetchApi('/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ old_password, new_password })
+    }),
+
+  // Sổ địa chỉ
+  getAddresses: () => fetchApi('/user/addresses'),
+  addAddress: (data) =>
+    fetchApi('/user/addresses', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  updateAddress: (id, data) =>
+    fetchApi(`/user/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  deleteAddress: (id) =>
+    fetchApi(`/user/addresses/${id}`, { method: 'DELETE' }),
+  setDefaultAddress: (id) =>
+    fetchApi(`/user/addresses/${id}/default`, { method: 'PUT' }),
+
+  // Sản phẩm yêu thích (Wishlist)
+  getWishlist: () => fetchApi('/wishlist'),
+  getWishlistIds: () => fetchApi('/wishlist/ids'),
+  toggleWishlist: (productId) =>
+    fetchApi(`/wishlist/${productId}`, { method: 'POST' }),
+
+  // Đánh giá sản phẩm
+  createReview: (data) =>
+    fetchApi('/reviews', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getProductReviews: (productId) => fetchApi(`/products/${productId}/reviews`),
+  getAdminReviews: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/admin/reviews?${query}`);
+  },
+  updateAdminReviewStatus: (id, status) =>
+    fetchApi(`/admin/reviews/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
+    }),
+  deleteAdminReview: (id) =>
+    fetchApi(`/admin/reviews/${id}`, { method: 'DELETE' }),
 
   // Quản trị viên (Admin)
   getAdminDashboard: () => fetchApi('/admin/dashboard'),
@@ -131,6 +192,31 @@ const api = {
     fetchApi(`/admin/orders/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ order_status: status, note })
+    }),
+  getAdminCoupons: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/admin/coupons?${query}`);
+  },
+  createAdminCoupon: (data) =>
+    fetchApi('/admin/coupons', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  updateAdminCoupon: (id, data) =>
+    fetchApi(`/admin/coupons/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+  deleteAdminCoupon: (id) =>
+    fetchApi(`/admin/coupons/${id}`, { method: 'DELETE' }),
+  getAdminUsers: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/admin/users?${query}`);
+  },
+  updateAdminUserStatus: (id, status) =>
+    fetchApi(`/admin/users/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status })
     })
 };
 

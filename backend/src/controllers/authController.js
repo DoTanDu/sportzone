@@ -3,10 +3,11 @@ const jwt = require('jsonwebtoken');
 const { get, run, query } = require('../config/db');
 const { JWT_SECRET } = require('../middlewares/auth');
 
-// Đăng ký tài khoản mới
+// Đăng ký tài khoản mới (Hỗ trợ Tên tài khoản - Username và Email)
 const register = async (req, res, next) => {
   try {
     const { full_name, email, phone, password } = req.body;
+    let username = (req.body.username || '').trim().toLowerCase();
 
     if (!full_name || !email || !password) {
       return res.status(400).json({
@@ -22,9 +23,30 @@ const register = async (req, res, next) => {
       });
     }
 
+    // Nếu không nhập username, tự sinh từ tiền tố email
+    if (!username) {
+      username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '').toLowerCase() || `user_${Date.now().toString().slice(-6)}`;
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tên tài khoản phải chứa ít nhất 3 ký tự.'
+      });
+    }
+
+    // Kiểm tra trùng username
+    const existingUsername = await get('SELECT id FROM users WHERE username = ?', [username]);
+    if (existingUsername) {
+      return res.status(400).json({
+        success: false,
+        message: `Tên tài khoản "${username}" đã có người sử dụng. Vui lòng chọn tên tài khoản khác.`
+      });
+    }
+
     // Kiểm tra trùng email
-    const existingUser = await get('SELECT id FROM users WHERE email = ?', [email.trim().toLowerCase()]);
-    if (existingUser) {
+    const existingEmail = await get('SELECT id FROM users WHERE email = ?', [email.trim().toLowerCase()]);
+    if (existingEmail) {
       return res.status(400).json({
         success: false,
         message: 'Email này đã được sử dụng. Vui lòng đăng nhập hoặc dùng email khác.'
@@ -35,13 +57,14 @@ const register = async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, salt);
 
     const result = await run(
-      `INSERT INTO users (full_name, email, phone, password_hash, role, status)
-       VALUES (?, ?, ?, ?, 'customer', 'active')`,
-      [full_name.trim(), email.trim().toLowerCase(), phone ? phone.trim() : null, passwordHash]
+      `INSERT INTO users (username, full_name, email, phone, password_hash, role, status)
+       VALUES (?, ?, ?, ?, ?, 'customer', 'active')`,
+      [username, full_name.trim(), email.trim().toLowerCase(), phone ? phone.trim() : null, passwordHash]
     );
 
     const user = {
       id: result.id,
+      username,
       full_name: full_name.trim(),
       email: email.trim().toLowerCase(),
       role: 'customer'
@@ -62,23 +85,23 @@ const register = async (req, res, next) => {
   }
 };
 
-// Đăng nhập (Chấp nhận tài khoản dạng 'admin' hoặc email)
+// Đăng nhập (Chấp nhận đăng nhập bằng Tên tài khoản HOẶC Email)
 const login = async (req, res, next) => {
   try {
-    const accountInput = (req.body.email || req.body.username || '').trim().toLowerCase();
+    const accountInput = (req.body.identifier || req.body.username || req.body.email || '').trim().toLowerCase();
     const { password } = req.body;
 
     if (!accountInput || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Vui lòng nhập đầy đủ tài khoản và mật khẩu.'
+        message: 'Vui lòng nhập đầy đủ tên tài khoản hoặc email và mật khẩu.'
       });
     }
 
-    // Chấp nhận 'admin' hoặc email tương ứng
+    // Tìm theo username hoặc email
     const user = await get(
-      'SELECT id, full_name, email, password_hash, role, status, avatar_url FROM users WHERE email = ? OR email = ?',
-      [accountInput, accountInput === 'admin' ? 'admin@sportstore.vn' : accountInput]
+      'SELECT id, username, full_name, email, password_hash, role, status, avatar_url FROM users WHERE username = ? OR email = ?',
+      [accountInput, accountInput]
     );
 
     if (!user) {
@@ -103,14 +126,15 @@ const login = async (req, res, next) => {
       });
     }
 
-    const tokenPayload = {
+    const payload = {
       id: user.id,
+      username: user.username,
       full_name: user.full_name,
       email: user.email,
       role: user.role
     };
 
-    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
     res.json({
       success: true,
@@ -119,6 +143,7 @@ const login = async (req, res, next) => {
         token,
         user: {
           id: user.id,
+          username: user.username,
           full_name: user.full_name,
           email: user.email,
           role: user.role,
@@ -135,7 +160,7 @@ const login = async (req, res, next) => {
 const getProfile = async (req, res, next) => {
   try {
     const user = await get(
-      'SELECT id, full_name, email, phone, role, avatar_url, created_at FROM users WHERE id = ?',
+      'SELECT id, username, full_name, email, phone, role, avatar_url, created_at FROM users WHERE id = ?',
       [req.user.id]
     );
 
@@ -160,8 +185,92 @@ const getProfile = async (req, res, next) => {
   }
 };
 
+// Cập nhật thông tin cá nhân
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { full_name, phone, avatar_url } = req.body;
+
+    if (!full_name || full_name.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Họ tên không được để trống.' });
+    }
+
+    await run(
+      `UPDATE users SET
+        full_name = ?,
+        phone = COALESCE(?, phone),
+        avatar_url = COALESCE(?, avatar_url),
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [full_name.trim(), phone ? phone.trim() : null, avatar_url ? avatar_url.trim() : null, userId]
+    );
+
+    const updatedUser = await get(
+      'SELECT id, full_name, email, phone, role, avatar_url FROM users WHERE id = ?',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Cập nhật thông tin cá nhân thành công!',
+      data: updatedUser
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Đổi mật khẩu
+const changePassword = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { old_password, new_password } = req.body;
+
+    if (!old_password || !new_password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cung cấp đầy đủ mật khẩu cũ và mật khẩu mới.'
+      });
+    }
+
+    if (new_password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mật khẩu mới phải chứa ít nhất 6 ký tự.'
+      });
+    }
+
+    const user = await get('SELECT password_hash FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Người dùng không tồn tại.' });
+    }
+
+    const isMatch = await bcrypt.compare(old_password, user.password_hash);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mật khẩu hiện tại không chính xác.'
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const newHash = await bcrypt.hash(new_password, salt);
+
+    await run('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newHash, userId]);
+
+    res.json({
+      success: true,
+      message: 'Đổi mật khẩu thành công! Vui lòng ghi nhớ mật khẩu mới.'
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   register,
   login,
-  getProfile
+  getProfile,
+  updateProfile,
+  changePassword
 };

@@ -21,6 +21,7 @@ const store = {
     limit: 12
   },
   appliedCoupon: null,
+  wishlistIds: [],
 
   // Khởi tạo trạng thái từ LocalStorage
   init() {
@@ -42,15 +43,17 @@ const store = {
     } else {
       localStorage.removeItem('sports_user');
       localStorage.removeItem('sports_auth_token');
+      this.wishlistIds = [];
     }
     this.updateUserUI();
+    this.updateWishlistBadge();
   },
 
   logout() {
     this.setUser(null, null);
     showToast('Đã đăng xuất tài khoản thành công.', 'info');
-    // Nếu đang ở trang admin, quay về trang chủ
-    if (window.location.hash.startsWith('#admin')) {
+    // Nếu đang ở trang admin hoặc profile, quay về trang chủ
+    if (window.location.hash.startsWith('#admin') || window.location.hash.startsWith('#profile')) {
       window.location.hash = '#home';
     }
   },
@@ -68,9 +71,24 @@ const store = {
     }
   },
 
+  setWishlistIds(ids) {
+    this.wishlistIds = Array.isArray(ids) ? ids : [];
+    this.updateWishlistBadge();
+  },
+
+  updateWishlistBadge() {
+    const badge = document.getElementById('nav-wishlist-count');
+    if (badge) {
+      const count = this.wishlistIds.length;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+  },
+
   updateUserUI() {
     const userBtn = document.getElementById('nav-user-btn');
     const adminLink = document.getElementById('nav-admin-link');
+    const profileLink = document.getElementById('nav-profile-link');
 
     if (userBtn) {
       if (this.user) {
@@ -78,11 +96,15 @@ const store = {
           <i class="fa-solid fa-user-check" style="color: var(--neon-cyan)"></i>
           <span style="font-size: 0.85rem; font-weight: 700; margin-left: 6px;">${this.user.full_name.split(' ').pop()}</span>
         `;
-        userBtn.title = `Đã đăng nhập: ${this.user.email} (Bấm để đăng xuất)`;
+        userBtn.title = `Tài khoản: ${this.user.full_name} (${this.user.email})`;
       } else {
         userBtn.innerHTML = `<i class="fa-solid fa-user"></i>`;
         userBtn.title = 'Đăng nhập / Đăng ký';
       }
+    }
+
+    if (profileLink) {
+      profileLink.style.display = this.user ? 'inline-flex' : 'none';
     }
 
     if (adminLink) {

@@ -1231,3 +1231,294 @@
     font-size: 2.5rem;
   }
 }
+
+/* ==========================================================
+   CÁC COMPONENT BỔ SUNG MỚI (WISHLIST, PROFILE, REVIEWS, VIETQR)
+   ========================================================== */
+
+/* Nút thả tim Yêu thích trên Card sản phẩm */
+.btn-wishlist-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(13, 18, 29, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.btn-wishlist-toggle:hover {
+  transform: scale(1.15);
+  background: #ff3366;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 51, 102, 0.6);
+}
+
+.btn-wishlist-toggle.active {
+  background: #ff3366;
+  color: #fff;
+  border-color: #ff3366;
+  box-shadow: 0 0 12px rgba(255, 51, 102, 0.5);
+}
+
+/* Auth Tabs (Đăng nhập / Đăng ký) */
+.auth-nav-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border-subtle);
+  margin-bottom: 24px;
+}
+
+.auth-nav-tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+}
+
+.auth-nav-tab.active {
+  color: var(--neon-cyan);
+}
+
+.auth-nav-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--neon-cyan);
+  box-shadow: 0 0 8px var(--neon-cyan);
+}
+
+/* Profile Portal Layout */
+.profile-portal {
+  max-width: 1080px;
+  margin: 40px auto 100px;
+  padding: 0 20px;
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.profile-nav-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 28px;
+  overflow-x: auto;
+}
+
+.profile-tab {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.profile-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.profile-tab.active {
+  color: var(--neon-cyan);
+  background: var(--bg-surface);
+  border-bottom: 2px solid var(--neon-cyan);
+}
+
+/* Rating Stars Picker */
+.rating-picker {
+  display: flex;
+  gap: 8px;
+  font-size: 1.5rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  margin: 8px 0 16px;
+}
+
+.rating-picker i {
+  transition: color 0.15s, transform 0.15s;
+}
+
+.rating-picker i:hover,
+.rating-picker i.active {
+  color: #ffb703;
+  transform: scale(1.1);
+}
+
+/* VietQR Modal Card */
+.vietqr-card {
+  background: linear-gradient(135deg, #0f172a 0%, #070a10 100%);
+  border: 1px solid var(--neon-cyan);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.15);
+  margin: 16px 0;
+}
+
+.vietqr-img {
+  max-width: 240px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 3px solid #fff;
+  box-shadow: var(--shadow-md);
+  margin: 12px auto;
+  display: block;
+}
+
+.vietqr-copy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  font-size: 0.88rem;
+}
+
+.btn-copy {
+  background: transparent;
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.btn-copy:hover {
+  background: var(--neon-cyan);
+  color: #000;
+}
+
+/* MoMo Dynamic QR Card */
+.momo-card {
+  background: linear-gradient(135deg, #2b0b1c 0%, #15050e 100%);
+  border: 1px solid #d82d8b;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  text-align: center;
+  box-shadow: 0 0 25px rgba(216, 45, 139, 0.2);
+  margin: 16px 0;
+  position: relative;
+}
+
+.momo-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+  color: #ff3e98;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+
+.momo-badge {
+  background: #d82d8b;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.momo-img {
+  max-width: 240px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 3px solid #d82d8b;
+  box-shadow: 0 4px 16px rgba(216, 45, 139, 0.3);
+  margin: 12px auto;
+  display: block;
+  background: #fff;
+  padding: 6px;
+}
+
+.momo-copy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(216, 45, 139, 0.1);
+  border: 1px solid rgba(216, 45, 139, 0.2);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  font-size: 0.88rem;
+}
+
+.btn-momo-copy {
+  background: transparent;
+  border: 1px solid #d82d8b;
+  color: #ff5da8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.btn-momo-copy:hover {
+  background: #d82d8b;
+  color: #fff;
+}
+
+.btn-momo-app {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #d82d8b 0%, #a50064 100%);
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  margin-top: 14px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(216, 45, 139, 0.35);
+  transition: var(--transition-fast);
+}
+
+.btn-momo-app:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(216, 45, 139, 0.5);
+  color: #fff;
+}
+

@@ -35,18 +35,29 @@
         <li><a href="#shop" class="nav-link">Cửa Hàng</a></li>
         <li><a href="#tracking" class="nav-link">Tra Cứu Đơn Hàng</a></li>
         <li>
+          <a href="#profile" class="nav-link" id="nav-profile-link" style="display: none;">
+            <i class="fa-solid fa-user-circle"></i> Tài Khoản Của Tôi
+          </a>
+        </li>
+        <li>
           <a href="#admin" class="nav-link" id="nav-admin-link" style="color: var(--neon-cyan); display: none;">
             <i class="fa-solid fa-gauge"></i> Quản Trị
           </a>
         </li>
       </ul>
 
-      <!-- Hành động: Tìm kiếm, Giỏ hàng, Tài khoản -->
+      <!-- Hành động: Tìm kiếm, Yêu thích, Giỏ hàng, Tài khoản -->
       <div class="nav-actions">
         <div class="search-bar">
           <i class="fa-solid fa-magnifying-glass search-icon"></i>
           <input type="text" id="nav-search-input" placeholder="Tìm giày, vợt, tạ... (Enter)">
         </div>
+
+        <!-- Nút danh sách yêu thích -->
+        <button class="btn-icon" id="nav-wishlist-btn" title="Sản phẩm yêu thích">
+          <i class="fa-solid fa-heart" style="color: #ff3366;"></i>
+          <span class="cart-count" id="nav-wishlist-count" style="display: none; background: #ff3366;">0</span>
+        </button>
 
         <!-- Nút mở giỏ hàng -->
         <button class="btn-icon" id="nav-cart-btn" title="Xem giỏ hàng">
@@ -79,6 +90,9 @@
 
     <!-- Trang Tra Cứu Đơn Hàng -->
     <div id="view-tracking" class="app-view" style="display: none;"></div>
+
+    <!-- Trang Cá Nhân & Đơn Hàng Của Tôi (Customer Portal) -->
+    <div id="view-profile" class="app-view" style="display: none;"></div>
 
     <!-- Trang Phân Hệ Quản Trị Viên (Admin) -->
     <div id="view-admin" class="app-view" style="display: none;">

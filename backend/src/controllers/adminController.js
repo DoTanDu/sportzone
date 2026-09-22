@@ -102,9 +102,53 @@ const updateOrderStatus = async (req, res, next) => {
       });
     }
 
-    const order = await get('SELECT id, order_code FROM orders WHERE id = ?', [id]);
+    const order = await get('SELECT id, order_code, order_status FROM orders WHERE id = ?', [id]);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng này.' });
+    }
+
+    const oldStatus = order.order_status;
+    const adminName = req.user ? req.user.full_name : 'Quản trị viên';
+
+    // Nếu đơn chuyển sang 'cancelled' hoặc 'returned' mà trước đó chưa hủy/trả -> Hoàn kho
+    if (['cancelled', 'returned'].includes(order_status) && !['cancelled', 'returned'].includes(oldStatus)) {
+      const items = await query(
+        'SELECT product_variant_id, quantity FROM order_items WHERE order_id = ?',
+        [id]
+      );
+
+      for (const item of items) {
+        if (item.product_variant_id) {
+          const variant = await get(
+            'SELECT product_id, stock_quantity FROM product_variants WHERE id = ?',
+            [item.product_variant_id]
+          );
+
+          if (variant) {
+            await run(
+              'UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?',
+              [item.quantity, item.product_variant_id]
+            );
+            await run(
+              'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
+              [item.quantity, variant.product_id]
+            );
+            await run(
+              `INSERT INTO inventory_logs (product_variant_id, change_type, quantity_change, previous_quantity, new_quantity, reference_id, note, created_by)
+               VALUES (?, 'order_cancel_restock', ?, ?, ?, ?, ?, ?)`,
+              [
+                item.product_variant_id,
+                item.quantity,
+                variant.stock_quantity,
+                variant.stock_quantity + item.quantity,
+                order.order_code,
+                `Hoàn kho khi đổi trạng thái đơn sang ${order_status}`,
+                adminName
+              ]
+            );
+          }
+        }
+      }
     }
 
     // Cập nhật trạng thái
@@ -114,7 +158,6 @@ const updateOrderStatus = async (req, res, next) => {
     );
 
     // Ghi vào dòng thời gian (Timeline)
-    const adminName = req.user ? req.user.full_name : 'Quản trị viên';
     await run(
       'INSERT INTO order_timeline (order_id, status, note, created_by) VALUES (?, ?, ?, ?)',
       [id, order_status, note || `Cập nhật trạng thái sang: ${order_status}`, adminName]
@@ -330,6 +373,231 @@ const deleteProduct = async (req, res, next) => {
   }
 };
 
+// ==========================================
+// QUẢN LÝ MÃ GIẢM GIÁ (COUPONS) CHO ADMIN
+// ==========================================
+const getAdminCoupons = async (req, res, next) => {
+  try {
+    const { page, limit, offset } = getPagination(req.query.page, req.query.limit);
+    const countRes = await get('SELECT COUNT(id) AS total FROM coupons');
+    const total = countRes ? countRes.total : 0;
+
+    const coupons = await query(
+      'SELECT * FROM coupons ORDER BY id DESC LIMIT ? OFFSET ?',
+      [limit, offset]
+    );
+
+    res.json(formatPaginationResponse(coupons, total, page, limit));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const createCoupon = async (req, res, next) => {
+  try {
+    const {
+      code,
+      description = '',
+      discount_type = 'percentage',
+      discount_value,
+      min_order_value = 0,
+      max_discount_amount = null,
+      usage_limit = 100,
+      start_date,
+      end_date
+    } = req.body;
+
+    if (!code || !discount_value || !start_date || !end_date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng điền mã giảm giá, mức giảm, ngày bắt đầu và ngày kết thúc.'
+      });
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const existing = await get('SELECT id FROM coupons WHERE code = ?', [cleanCode]);
+    if (existing) {
+      return res.status(400).json({ success: false, message: `Mã giảm giá "${cleanCode}" đã tồn tại.` });
+    }
+
+    const result = await run(
+      `INSERT INTO coupons (
+        code, description, discount_type, discount_value, min_order_value, max_discount_amount,
+        usage_limit, start_date, end_date, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        cleanCode,
+        description.trim(),
+        discount_type,
+        Number(discount_value),
+        Number(min_order_value || 0),
+        max_discount_amount ? Number(max_discount_amount) : null,
+        parseInt(usage_limit || 100, 10),
+        start_date,
+        end_date
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Tạo mã giảm giá "${cleanCode}" thành công!`,
+      data: { id: result.id, code: cleanCode }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateCoupon = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      description,
+      discount_value,
+      min_order_value,
+      max_discount_amount,
+      usage_limit,
+      end_date,
+      is_active
+    } = req.body;
+
+    const coupon = await get('SELECT id FROM coupons WHERE id = ?', [id]);
+    if (!coupon) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy mã giảm giá này.' });
+    }
+
+    await run(
+      `UPDATE coupons SET
+        description = COALESCE(?, description),
+        discount_value = COALESCE(?, discount_value),
+        min_order_value = COALESCE(?, min_order_value),
+        max_discount_amount = COALESCE(?, max_discount_amount),
+        usage_limit = COALESCE(?, usage_limit),
+        end_date = COALESCE(?, end_date),
+        is_active = COALESCE(?, is_active)
+       WHERE id = ?`,
+      [description, discount_value, min_order_value, max_discount_amount, usage_limit, end_date, is_active, id]
+    );
+
+    res.json({ success: true, message: 'Cập nhật mã giảm giá thành công!' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteCoupon = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    // Kiểm tra xem coupon đã có khách dùng trong đơn hàng chưa
+    const used = await get('SELECT id FROM coupon_usages WHERE coupon_id = ? LIMIT 1', [id]);
+    if (used) {
+      // Đã có khách sử dụng thì chỉ tạm khóa để bảo toàn lịch sử đơn hàng
+      await run('UPDATE coupons SET is_active = 0 WHERE id = ?', [id]);
+      return res.json({ success: true, message: 'Mã giảm giá đã có khách hàng sử dụng trước đó, hệ thống đã chuyển sang Tạm Khóa để bảo toàn lịch sử hóa đơn.' });
+    }
+    // Nếu chưa từng dùng thì xóa hẳn
+    await run('DELETE FROM coupons WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Đã xóa hoàn toàn mã giảm giá khỏi hệ thống.' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// QUẢN LÝ DANH MỤC & THƯƠNG HIỆU CHO ADMIN
+// ==========================================
+const createCategory = async (req, res, next) => {
+  try {
+    const { name, icon = 'fa-medal', image_url = '', parent_id = null } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Tên danh mục không được để trống.' });
+
+    const slug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[đĐ]/g, 'd')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') + '-' + Date.now().toString().slice(-3);
+
+    const result = await run(
+      'INSERT INTO categories (name, slug, icon, image_url, parent_id, is_active) VALUES (?, ?, ?, ?, ?, 1)',
+      [name.trim(), slug, icon.trim(), image_url.trim(), parent_id || null]
+    );
+
+    res.status(201).json({ success: true, message: 'Thêm danh mục mới thành công!', data: { id: result.id, name, slug } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, icon, is_active } = req.body;
+    await run(
+      'UPDATE categories SET name = COALESCE(?, name), icon = COALESCE(?, icon), is_active = COALESCE(?, is_active) WHERE id = ?',
+      [name, icon, is_active, id]
+    );
+    res.json({ success: true, message: 'Cập nhật danh mục thành công!' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await run('UPDATE categories SET is_active = 0 WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Đã ẩn danh mục thành công.' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ==========================================
+// QUẢN LÝ KHÁCH HÀNG (USERS) CHO ADMIN
+// ==========================================
+const getAdminUsers = async (req, res, next) => {
+  try {
+    const { page, limit, offset } = getPagination(req.query.page, req.query.limit);
+    const countRes = await get("SELECT COUNT(id) AS total FROM users WHERE role = 'customer'");
+    const total = countRes ? countRes.total : 0;
+
+    const users = await query(
+      `SELECT u.id, u.full_name, u.email, u.phone, u.role, u.status, u.created_at,
+              COUNT(o.id) AS total_orders,
+              COALESCE(SUM(o.total_amount), 0) AS total_spent
+       FROM users u
+       LEFT JOIN orders o ON u.id = o.user_id AND o.payment_status = 'paid'
+       WHERE u.role = 'customer'
+       GROUP BY u.id
+       ORDER BY u.id DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    res.json(formatPaginationResponse(users, total, page, limit));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateUserStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'inactive', 'banned'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Trạng thái người dùng không hợp lệ.' });
+    }
+
+    await run('UPDATE users SET status = ? WHERE id = ?', [status, id]);
+    res.json({ success: true, message: `Đã cập nhật trạng thái người dùng thành: ${status}` });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAdminOrders,
@@ -338,5 +606,14 @@ module.exports = {
   createProduct,
   updateProduct,
   updateVariantStock,
-  deleteProduct
+  deleteProduct,
+  getAdminCoupons,
+  createCoupon,
+  updateCoupon,
+  deleteCoupon,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  getAdminUsers,
+  updateUserStatus
 };

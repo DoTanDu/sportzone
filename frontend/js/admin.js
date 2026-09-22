@@ -44,6 +44,12 @@ const admin = {
           <button class="admin-tab ${this.currentTab === 'orders' ? 'active' : ''}" data-tab="orders">
             <i class="fa-solid fa-clipboard-list"></i> Quản Lý Đơn Hàng
           </button>
+          <button class="admin-tab ${this.currentTab === 'coupons' ? 'active' : ''}" data-tab="coupons">
+            <i class="fa-solid fa-ticket"></i> Mã Giảm Giá (Vouchers)
+          </button>
+          <button class="admin-tab ${this.currentTab === 'reviews' ? 'active' : ''}" data-tab="reviews">
+            <i class="fa-solid fa-star-half-stroke"></i> Duyệt Đánh Giá
+          </button>
         </div>
 
         <div id="admin-tab-body">
@@ -72,33 +78,31 @@ const admin = {
       await this.loadProductsTab();
     } else if (this.currentTab === 'orders') {
       await this.loadOrdersTab();
+    } else if (this.currentTab === 'coupons') {
+      await this.loadCouponsTab();
+    } else if (this.currentTab === 'reviews') {
+      await this.loadReviewsTab();
     }
   },
 
-  // Form đăng nhập Admin
+  // Form đăng nhập Admin bảo mật
   renderLoginForm() {
     return `
       <div style="max-width: 440px; margin: 80px auto; padding: 40px; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); box-shadow: var(--shadow-md);">
         <div style="text-align: center; margin-bottom: 28px;">
-          <div class="cat-icon-wrap" style="color: var(--neon-cyan);"><i class="fa-solid fa-lock"></i></div>
+          <div class="cat-icon-wrap" style="color: var(--neon-cyan); margin: 0 auto 12px;"><i class="fa-solid fa-shield-halved fa-2x"></i></div>
           <h2 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 6px;">Đăng Nhập Quản Trị</h2>
-          <p style="font-size: 0.88rem; color: var(--text-muted);">Dành riêng cho Quản lý & Nhân viên thể thao</p>
-        </div>
-
-        <div style="background: rgba(0, 240, 255, 0.08); border: 1px dashed var(--neon-cyan); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 20px; font-size: 0.85rem;">
-          <strong>Tài khoản Quản trị viên (Admin):</strong><br>
-          • Tài khoản: <code style="color: var(--neon-cyan); font-weight: bold; font-size: 1rem;">admin</code><br>
-          • Mật khẩu: <code style="color: var(--neon-orange); font-weight: bold; font-size: 1rem;">admin</code>
+          <p style="font-size: 0.88rem; color: var(--text-muted);">Cổng bảo mật dành cho Ban quản lý & Nhân viên SportZone</p>
         </div>
 
         <form id="admin-login-form">
           <div class="form-group">
-            <label class="form-label">Tài khoản quản trị</label>
-            <input type="text" id="admin-email" class="form-control" value="admin" placeholder="Nhập: admin" required>
+            <label class="form-label">Tài khoản hoặc Email quản trị</label>
+            <input type="text" id="admin-email" class="form-control" placeholder="Nhập tên tài khoản hoặc email..." required autocomplete="username">
           </div>
           <div class="form-group">
             <label class="form-label">Mật khẩu</label>
-            <input type="password" id="admin-password" class="form-control" value="admin" placeholder="Nhập: admin" required>
+            <input type="password" id="admin-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
           </div>
           <button type="submit" class="btn btn-cyan" style="width: 100%; margin-top: 10px;">
             <i class="fa-solid fa-arrow-right-to-bracket"></i> Đăng Nhập Quản Trị
@@ -537,6 +541,279 @@ const admin = {
 
     } catch (err) {
       tabBody.innerHTML = `<div style="color: var(--neon-red); text-align: center;">Lỗi tải đơn hàng: ${err.message}</div>`;
+    }
+  },
+
+  // --- TAB 4: QUẢN LÝ MÃ GIẢM GIÁ (COUPONS) ---
+  async loadCouponsTab() {
+    const tabBody = document.getElementById('admin-tab-body');
+    if (!tabBody) return;
+
+    try {
+      const res = await api.getAdminCoupons();
+      const coupons = res.data;
+
+      tabBody.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
+          <!-- Danh sách Voucher -->
+          <div class="glass-panel" style="padding: 20px;">
+            <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+              <i class="fa-solid fa-ticket" style="color: var(--neon-cyan);"></i> Danh Sách Mã Giảm Giá (${coupons.length})
+            </h3>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; max-height: 480px; overflow-y: auto;">
+              ${coupons.map(c => `
+                <div style="background: var(--bg-card); padding: 14px 18px; border-radius: var(--radius-md); border-left: 4px solid ${c.is_active ? 'var(--neon-green)' : 'var(--text-dark)'};">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <strong style="color: var(--neon-cyan); font-size: 1.1rem; letter-spacing: 0.05em;">${c.code}</strong>
+                    <span class="badge ${c.is_active ? 'badge-stock' : 'badge-sale'}">${c.is_active ? 'Hoạt động' : 'Tạm khóa'}</span>
+                  </div>
+                  <div style="font-size: 0.88rem; color: #fff; margin-bottom: 4px;">
+                    Giảm: <strong>${c.discount_type === 'percentage' ? c.discount_value + '%' : formatVND(c.discount_value)}</strong>
+                    ${c.max_discount_amount ? ` (Tối đa ${formatVND(c.max_discount_amount)})` : ''}
+                  </div>
+                  <div style="font-size: 0.82rem; color: var(--text-muted);">
+                    Đơn tối thiểu: ${formatVND(c.min_order_value)} • Đã dùng: <strong>${c.used_count}/${c.usage_limit}</strong> lượt
+                  </div>
+                  <div style="font-size: 0.78rem; color: var(--text-dark); margin-top: 4px;">
+                    Hạn: ${new Date(c.start_date).toLocaleDateString('vi-VN')} - ${new Date(c.end_date).toLocaleDateString('vi-VN')}
+                  </div>
+                  <div style="margin-top: 10px; display: flex; justify-content: flex-end; gap: 8px;">
+                    ${c.is_active ? `
+                      <button class="btn btn-outline btn-sm btn-deactivate-coupon" data-id="${c.id}" style="padding: 3px 10px; font-size: 0.75rem; color: #ffb703; border-color: rgba(255,183,3,0.4);" title="Tạm ngưng mã">
+                        <i class="fa-solid fa-pause"></i> Tạm khóa
+                      </button>
+                    ` : `
+                      <button class="btn btn-outline btn-sm btn-activate-coupon" data-id="${c.id}" style="padding: 3px 10px; font-size: 0.75rem; color: var(--neon-green); border-color: rgba(0,255,157,0.4);" title="Bật hoạt động lại">
+                        <i class="fa-solid fa-play"></i> Kích hoạt
+                      </button>
+                    `}
+                    <button class="btn btn-outline btn-sm btn-delete-coupon" data-id="${c.id}" style="padding: 3px 10px; font-size: 0.75rem; color: var(--neon-red); border-color: rgba(255,51,102,0.4);" title="Xóa mã khỏi hệ thống">
+                      <i class="fa-solid fa-trash"></i> Xóa
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Form tạo Voucher mới -->
+          <div class="glass-panel" style="padding: 24px;">
+            <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+              <i class="fa-solid fa-plus-circle" style="color: var(--neon-cyan);"></i> Thêm Bất Kỳ Voucher Mới Nào
+            </h3>
+            <form id="form-create-coupon">
+              <div class="form-group">
+                <label class="form-label">Mã Voucher (Mã code) *</label>
+                <input type="text" id="coupon-code" class="form-control" placeholder="VD: SPORTZONE2026, SUMMER50, VIP..." required style="text-transform: uppercase; font-weight: 700;">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Mô tả chương trình ưu đãi</label>
+                <input type="text" id="coupon-desc" class="form-control" placeholder="VD: Giảm giá ngày hội thể thao">
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">Loại giảm giá</label>
+                  <select id="coupon-type" class="form-control">
+                    <option value="percentage">Phần trăm (%)</option>
+                    <option value="fixed_amount">Số tiền cố định (VNĐ)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Giá trị giảm *</label>
+                  <input type="number" id="coupon-value" class="form-control" placeholder="VD: 15 (cho 15%) hoặc 100000" required min="1">
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">Đơn tối thiểu (VNĐ)</label>
+                  <input type="number" id="coupon-min-order" class="form-control" value="0" min="0">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Giảm tối đa (VNĐ)</label>
+                  <input type="number" id="coupon-max-discount" class="form-control" placeholder="Để trống nếu không giới hạn">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Số lượt sử dụng tối đa</label>
+                <input type="number" id="coupon-usage-limit" class="form-control" value="100" min="1">
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                  <label class="form-label">Ngày bắt đầu *</label>
+                  <input type="date" id="coupon-start-date" class="form-control" required value="${new Date().toISOString().slice(0, 10)}">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Ngày kết thúc *</label>
+                  <input type="date" id="coupon-end-date" class="form-control" required value="${new Date(Date.now() + 30*24*60*60*1000).toISOString().slice(0, 10)}">
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+                <i class="fa-solid fa-floppy-disk"></i> Lưu & Kích Hoạt Voucher Ngay
+              </button>
+            </form>
+          </div>
+        </div>
+      `;
+
+      // Submit tạo coupon
+      document.getElementById('form-create-coupon').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          await api.createAdminCoupon({
+            code: document.getElementById('coupon-code').value.trim().toUpperCase(),
+            description: document.getElementById('coupon-desc').value.trim(),
+            discount_type: document.getElementById('coupon-type').value,
+            discount_value: Number(document.getElementById('coupon-value').value),
+            min_order_value: Number(document.getElementById('coupon-min-order').value || 0),
+            max_discount_amount: document.getElementById('coupon-max-discount').value ? Number(document.getElementById('coupon-max-discount').value) : null,
+            usage_limit: parseInt(document.getElementById('coupon-usage-limit').value || 100, 10),
+            start_date: document.getElementById('coupon-start-date').value + ' 00:00:00',
+            end_date: document.getElementById('coupon-end-date').value + ' 23:59:59'
+          });
+          showToast('Đã tạo mã giảm giá mới thành công!', 'success');
+          this.loadCouponsTab();
+        } catch (cErr) {
+          showToast(cErr.message, 'error');
+        }
+      });
+
+      // Tạm khóa coupon
+      tabBody.querySelectorAll('.btn-deactivate-coupon').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.updateAdminCoupon(btn.dataset.id, { is_active: 0 });
+            showToast('Đã tạm khóa mã giảm giá!', 'info');
+            this.loadCouponsTab();
+          } catch (xErr) {
+            showToast(xErr.message, 'error');
+          }
+        });
+      });
+
+      // Kích hoạt lại coupon
+      tabBody.querySelectorAll('.btn-activate-coupon').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.updateAdminCoupon(btn.dataset.id, { is_active: 1 });
+            showToast('Đã kích hoạt lại mã giảm giá!', 'success');
+            this.loadCouponsTab();
+          } catch (xErr) {
+            showToast(xErr.message, 'error');
+          }
+        });
+      });
+
+      // Xóa vĩnh viễn coupon
+      tabBody.querySelectorAll('.btn-delete-coupon').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Bạn có chắc chắn muốn xóa mã giảm giá này khỏi hệ thống?')) return;
+          try {
+            await api.deleteAdminCoupon(btn.dataset.id);
+            showToast('Đã xóa mã giảm giá!', 'success');
+            this.loadCouponsTab();
+          } catch (xErr) {
+            showToast(xErr.message, 'error');
+          }
+        });
+      });
+
+    } catch (err) {
+      tabBody.innerHTML = `<div style="color: var(--neon-red); text-align: center;">Lỗi tải mã giảm giá: ${err.message}</div>`;
+    }
+  },
+
+  // --- TAB 5: DUYỆT ĐÁNH GIÁ SẢN PHẨM ---
+  async loadReviewsTab() {
+    const tabBody = document.getElementById('admin-tab-body');
+    if (!tabBody) return;
+
+    try {
+      const res = await api.getAdminReviews({ limit: 50 });
+      const reviews = res.data;
+
+      tabBody.innerHTML = `
+        <div class="glass-panel" style="padding: 24px;">
+          <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+            <i class="fa-solid fa-star-half-stroke" style="color: var(--neon-cyan);"></i> Kiểm Duyệt Đánh Giá Sản Phẩm (${reviews.length})
+          </h3>
+
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Sản phẩm</th>
+                  <th>Khách hàng</th>
+                  <th>Sao</th>
+                  <th>Bình luận</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reviews.length === 0 ? '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Không có đánh giá nào cần duyệt.</td></tr>' : ''}
+                ${reviews.map(r => `
+                  <tr>
+                    <td><strong>${r.product_name}</strong></td>
+                    <td>
+                      <div>${r.user_name}</div>
+                      <small style="color: var(--text-muted);">${r.user_email}</small>
+                    </td>
+                    <td><span style="color: #ffb703; font-weight: 700;">${'★'.repeat(r.rating)} (${r.rating}/5)</span></td>
+                    <td style="max-width: 240px; font-size: 0.85rem; color: var(--text-muted);">${r.comment || 'Không có nhận xét'}</td>
+                    <td>
+                      <span class="badge ${r.status === 'approved' ? 'badge-stock' : (r.status === 'rejected' ? 'badge-sale' : 'badge-hot')}">
+                        ${r.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 6px;">
+                        ${r.status !== 'approved' ? `
+                          <button class="btn btn-outline btn-sm btn-approve-review" data-id="${r.id}" style="color: var(--neon-green); border-color: var(--neon-green);" title="Duyệt đánh giá">
+                            <i class="fa-solid fa-check"></i>
+                          </button>
+                        ` : ''}
+                        ${r.status !== 'rejected' ? `
+                          <button class="btn btn-outline btn-sm btn-reject-review" data-id="${r.id}" style="color: var(--neon-red); border-color: var(--neon-red);" title="Ẩn/Từ chối">
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        ` : ''}
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      tabBody.querySelectorAll('.btn-approve-review').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.updateAdminReviewStatus(btn.dataset.id, 'approved');
+            showToast('Đã duyệt đánh giá!', 'success');
+            this.loadReviewsTab();
+          } catch (e) {
+            showToast(e.message, 'error');
+          }
+        });
+      });
+
+      tabBody.querySelectorAll('.btn-reject-review').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.updateAdminReviewStatus(btn.dataset.id, 'rejected');
+            showToast('Đã từ chối/ẩn đánh giá!', 'success');
+            this.loadReviewsTab();
+          } catch (e) {
+            showToast(e.message, 'error');
+          }
+        });
+      });
+
+    } catch (err) {
+      tabBody.innerHTML = `<div style="color: var(--neon-red); text-align: center;">Lỗi tải đánh giá: ${err.message}</div>`;
     }
   }
 };

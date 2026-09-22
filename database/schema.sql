@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS users;
 
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(50) UNIQUE,
     full_name VARCHAR(100) NOT NULL,
     email VARCHAR(150) NOT NULL UNIQUE,
     phone VARCHAR(20) UNIQUE,
@@ -264,6 +265,70 @@ CREATE TABLE reviews (
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
 );
 
+-- ----------------------------------------------------------
+-- 14. DANH SÁCH SẢN PHẨM YÊU THÍCH (WISHLISTS)
+-- ----------------------------------------------------------
+CREATE TABLE wishlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE (user_id, product_id)
+);
+
+-- ----------------------------------------------------------
+-- 15. LỊCH SỬ SỬ DỤNG MÃ GIẢM GIÁ THEO NGƯỜI DÙNG (COUPON_USAGES)
+-- Ngăn chặn 1 người dùng lạm dụng dùng 1 voucher nhiều lần
+-- ----------------------------------------------------------
+CREATE TABLE coupon_usages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    coupon_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL,
+    used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    UNIQUE (coupon_id, user_id)
+);
+
+-- ----------------------------------------------------------
+-- 16. GIAO DỊCH THANH TOÁN (PAYMENT_TRANSACTIONS)
+-- Lưu vết giao dịch trực tuyến: VietQR, VNPay, MoMo, Ngân hàng
+-- ----------------------------------------------------------
+CREATE TABLE payment_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    gateway VARCHAR(30) NOT NULL, -- 'vietqr', 'banking', 'vnpay', 'momo'
+    transaction_code VARCHAR(100),
+    amount DECIMAL(12, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'success', 'failed', 'refunded')),
+    payment_url TEXT,
+    gateway_response TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+
+-- ----------------------------------------------------------
+-- 17. LỊCH SỬ BIẾN ĐỘNG KHO HÀNG (INVENTORY_LOGS)
+-- Theo dõi xuất/nhập/hoàn kho khi hủy đơn
+-- ----------------------------------------------------------
+CREATE TABLE inventory_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_variant_id INTEGER NOT NULL,
+    change_type VARCHAR(30) NOT NULL, -- 'import', 'order_sale', 'order_cancel_restock', 'adjustment'
+    quantity_change INTEGER NOT NULL,
+    previous_quantity INTEGER NOT NULL,
+    new_quantity INTEGER NOT NULL,
+    reference_id VARCHAR(50),
+    note VARCHAR(255),
+    created_by VARCHAR(100) DEFAULT 'Hệ thống',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_variant_id) REFERENCES product_variants(id) ON DELETE CASCADE
+);
+
 -- ==========================================================
 -- CHỈ MỤC (INDEXES) TỐI ƯU TỐC ĐỘ TRUY VẤN
 -- ==========================================================
@@ -278,3 +343,7 @@ CREATE INDEX idx_orders_code ON orders(order_code);
 CREATE INDEX idx_orders_status ON orders(order_status);
 CREATE INDEX idx_cart_items_cart ON cart_items(cart_id);
 CREATE INDEX idx_reviews_product ON reviews(product_id);
+CREATE INDEX idx_wishlists_user ON wishlists(user_id);
+CREATE INDEX idx_coupon_usages_user ON coupon_usages(user_id, coupon_id);
+CREATE INDEX idx_inventory_logs_variant ON inventory_logs(product_variant_id);
+

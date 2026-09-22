@@ -119,6 +119,17 @@ const createOrder = async (req, res, next) => {
           const endDate = new Date(coupon.end_date);
 
           if (now >= startDate && now <= endDate && coupon.used_count < coupon.usage_limit && subtotal >= coupon.min_order_value) {
+            // Kiểm tra xem khách hàng này đã dùng mã này trước đó chưa
+            if (userId) {
+              const alreadyUsed = await get(
+                'SELECT id FROM coupon_usages WHERE user_id = ? AND coupon_id = ?',
+                [userId, coupon.id]
+              );
+              if (alreadyUsed) {
+                throw new Error(`Bạn đã sử dụng mã giảm giá "${coupon.code}" cho đơn hàng trước.`);
+              }
+            }
+
             couponId = coupon.id;
             if (coupon.discount_type === 'percentage') {
               discountAmount = (subtotal * coupon.discount_value) / 100;
@@ -164,12 +175,29 @@ const createOrder = async (req, res, next) => {
 
       const orderId = orderInsert.id;
 
-      // 5. Lưu chi tiết sản phẩm đơn hàng
+      // Lưu lịch sử sử dụng voucher theo user
+      if (couponId && userId) {
+        await run(
+          'INSERT INTO coupon_usages (coupon_id, user_id, order_id) VALUES (?, ?, ?)',
+          [couponId, userId, orderId]
+        );
+      }
+
+      // 5. Lưu chi tiết sản phẩm đơn hàng & ghi log biến động kho
       for (const item of verifiedItems) {
         await run(
           `INSERT INTO order_items (order_id, product_variant_id, product_name, variant_label, unit_price, quantity, total_price)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [orderId, item.product_variant_id, item.product_name, item.variant_label, item.unit_price, item.quantity, item.total_price]
+        );
+
+        // Ghi log biến động xuất kho bán hàng
+        const currVariant = await get('SELECT stock_quantity FROM product_variants WHERE id = ?', [item.product_variant_id]);
+        const currentStock = currVariant ? currVariant.stock_quantity : 0;
+        await run(
+          `INSERT INTO inventory_logs (product_variant_id, change_type, quantity_change, previous_quantity, new_quantity, reference_id, note)
+           VALUES (?, 'order_sale', ?, ?, ?, ?, ?)`,
+          [item.product_variant_id, -item.quantity, currentStock + item.quantity, currentStock, orderCode, `Bán theo đơn ${orderCode}`]
         );
       }
 
@@ -180,7 +208,43 @@ const createOrder = async (req, res, next) => {
         [orderId]
       );
 
-      // 7. Dọn sạch giỏ hàng của user/session sau khi đặt thành công
+      // 7. Tạo mã QR thanh toán động (VietQR hoặc MoMo)
+      let vietQrUrl = null;
+      let momoQrUrl = null;
+      let momoPayload = null;
+
+      if (payment_method === 'banking') {
+        const bankAccount = '19072002464014';
+        const bankName = 'TCB'; // Ngân hàng Techcombank
+        const accountHolder = 'Sportzone';
+        vietQrUrl = 'assets/images/qr_vietqr.png';
+
+        await run(
+          `INSERT INTO payment_transactions (order_id, gateway, transaction_code, amount, status, payment_url)
+           VALUES (?, 'vietqr', ?, ?, 'pending', ?)`,
+          [orderId, orderCode, totalAmount, vietQrUrl]
+        );
+      } else if (payment_method === 'momo') {
+        const momoPhone = '0987654321';
+        const momoReceiver = 'Sportzone';
+        momoQrUrl = 'assets/images/qr_momo.png';
+        momoPayload = {
+          phone: momoPhone,
+          receiver: momoReceiver,
+          amount: totalAmount,
+          order_code: orderCode,
+          qr_url: momoQrUrl,
+          deep_link: `momo://?action=payWithApp&amount=${totalAmount}&note=${encodeURIComponent(orderCode)}`
+        };
+
+        await run(
+          `INSERT INTO payment_transactions (order_id, gateway, transaction_code, amount, status, payment_url)
+           VALUES (?, 'momo', ?, ?, 'pending', ?)`,
+          [orderId, orderCode, totalAmount, momoQrUrl]
+        );
+      }
+
+      // 8. Dọn sạch giỏ hàng của user/session sau khi đặt thành công
       if (userId) {
         const cart = await get('SELECT id FROM carts WHERE user_id = ?', [userId]);
         if (cart) {
@@ -195,7 +259,11 @@ const createOrder = async (req, res, next) => {
         subtotal,
         shipping_fee: shippingFee,
         discount_amount: discountAmount,
-        items_count: verifiedItems.length
+        items_count: verifiedItems.length,
+        payment_method,
+        vietqr_url: vietQrUrl,
+        momo_qr_url: momoQrUrl,
+        momo_payload: momoPayload
       };
     });
 
@@ -227,7 +295,7 @@ const getOrderTracking = async (req, res, next) => {
     }
 
     const items = await query(
-      `SELECT oi.*, pv.image_url, p.thumbnail_url
+      `SELECT oi.*, pv.image_url, p.thumbnail_url, p.id AS product_id, p.slug AS product_slug
        FROM order_items oi
        LEFT JOIN product_variants pv ON oi.product_variant_id = pv.id
        LEFT JOIN products p ON pv.product_id = p.id
@@ -240,12 +308,18 @@ const getOrderTracking = async (req, res, next) => {
       [order.id]
     );
 
+    const transaction = await get(
+      `SELECT * FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1`,
+      [order.id]
+    );
+
     res.json({
       success: true,
       data: {
         ...order,
         items,
-        timeline
+        timeline,
+        payment_transaction: transaction
       }
     });
   } catch (err) {
@@ -253,7 +327,7 @@ const getOrderTracking = async (req, res, next) => {
   }
 };
 
-// Lấy danh sách đơn hàng của người dùng đã đăng nhập (có phân trang an toàn)
+// Lấy danh sách đơn hàng của người dùng đã đăng nhập (kèm sản phẩm đại diện)
 const getUserOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -272,7 +346,113 @@ const getUserOrders = async (req, res, next) => {
       [userId, limit, offset]
     );
 
+    // Kèm theo danh sách chi tiết các mặt hàng cho từng đơn
+    for (const ord of orders) {
+      ord.items = await query(
+        `SELECT oi.*, p.id AS product_id, p.slug AS product_slug, COALESCE(pv.image_url, p.thumbnail_url) AS image_url
+         FROM order_items oi
+         LEFT JOIN product_variants pv ON oi.product_variant_id = pv.id
+         LEFT JOIN products p ON pv.product_id = p.id
+         WHERE oi.order_id = ?`,
+        [ord.id]
+      );
+    }
+
     res.json(formatPaginationResponse(orders, total, page, limit));
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Khách hàng tự hủy đơn hàng (chỉ khi đơn hàng còn ở trạng thái pending)
+const cancelUserOrder = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { code } = req.params;
+    const { reason = 'Khách hàng thay đổi ý định' } = req.body;
+
+    const order = await get(
+      'SELECT id, order_code, order_status, user_id FROM orders WHERE order_code = ?',
+      [code.trim()]
+    );
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng này.' });
+    }
+
+    if (order.user_id !== userId) {
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền hủy đơn hàng này.' });
+    }
+
+    if (order.order_status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Đơn hàng đang ở trạng thái "${order.order_status}", không thể tự hủy. Vui lòng liên hệ hotline hỗ trợ.`
+      });
+    }
+
+    await transaction(async ({ run, query, get }) => {
+      // 1. Cập nhật trạng thái đơn sang cancelled
+      await run(
+        "UPDATE orders SET order_status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [order.id]
+      );
+
+      // 2. Lấy danh sách sản phẩm để hoàn kho
+      const items = await query(
+        'SELECT product_variant_id, quantity FROM order_items WHERE order_id = ?',
+        [order.id]
+      );
+
+      for (const item of items) {
+        if (item.product_variant_id) {
+          const variant = await get(
+            'SELECT product_id, stock_quantity FROM product_variants WHERE id = ?',
+            [item.product_variant_id]
+          );
+
+          if (variant) {
+            // Cộng lại kho
+            await run(
+              'UPDATE product_variants SET stock_quantity = stock_quantity + ? WHERE id = ?',
+              [item.quantity, item.product_variant_id]
+            );
+
+            // Giảm sold_count của sản phẩm
+            await run(
+              'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
+              [item.quantity, variant.product_id]
+            );
+
+            // Ghi log hoàn kho
+            await run(
+              `INSERT INTO inventory_logs (product_variant_id, change_type, quantity_change, previous_quantity, new_quantity, reference_id, note, created_by)
+               VALUES (?, 'order_cancel_restock', ?, ?, ?, ?, ?, 'Khách hàng')`,
+              [
+                item.product_variant_id,
+                item.quantity,
+                variant.stock_quantity,
+                variant.stock_quantity + item.quantity,
+                order.order_code,
+                `Hoàn kho do khách hủy đơn: ${reason}`
+              ]
+            );
+          }
+        }
+      }
+
+      // 3. Ghi vào timeline
+      await run(
+        `INSERT INTO order_timeline (order_id, status, note, created_by)
+         VALUES (?, 'cancelled', ?, 'Khách hàng')`,
+        [order.id, `Khách hủy đơn hàng: ${reason}`]
+      );
+    });
+
+    res.json({
+      success: true,
+      message: `Đơn hàng ${order.order_code} đã được hủy thành công và hoàn trả tồn kho.`
+    });
   } catch (err) {
     next(err);
   }
@@ -281,5 +461,6 @@ const getUserOrders = async (req, res, next) => {
 module.exports = {
   createOrder,
   getOrderTracking,
-  getUserOrders
+  getUserOrders,
+  cancelUserOrder
 };

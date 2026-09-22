@@ -4,12 +4,12 @@
    ========================================================== */
 
 const app = {
-  activeView: 'home', // 'home', 'shop', 'tracking', 'admin'
+  activeView: 'home', // 'home', 'shop', 'tracking', 'profile', 'admin'
   selectedProduct: null,
   selectedVariant: null,
 
   async init() {
-    // 1. Tải danh mục & thương hiệu khởi tạo
+    // 1. Tải danh mục, thương hiệu, giỏ hàng và danh sách yêu thích
     try {
       const [catsRes, brandsRes, cartRes] = await Promise.all([
         api.getCategories(),
@@ -19,6 +19,15 @@ const app = {
       store.categories = catsRes.data;
       store.brands = brandsRes.data;
       store.setCart(cartRes.data);
+
+      if (store.user) {
+        try {
+          const wishRes = await api.getWishlistIds();
+          store.setWishlistIds(wishRes.data || []);
+        } catch (wErr) {
+          console.warn('Lỗi tải wishlist:', wErr);
+        }
+      }
     } catch (err) {
       console.warn('Lỗi tải dữ liệu khởi tạo:', err);
     }
@@ -36,7 +45,7 @@ const app = {
     const hash = window.location.hash || '#home';
     const viewName = hash.replace('#', '').split('?')[0];
 
-    this.activeView = ['home', 'shop', 'tracking', 'admin'].includes(viewName) ? viewName : 'home';
+    this.activeView = ['home', 'shop', 'tracking', 'profile', 'admin'].includes(viewName) ? viewName : 'home';
 
     // Cập nhật trạng thái active trên navbar
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -60,6 +69,7 @@ const app = {
     if (this.activeView === 'home') this.renderHome();
     else if (this.activeView === 'shop') this.renderShop();
     else if (this.activeView === 'tracking') this.renderTracking();
+    else if (this.activeView === 'profile') this.renderProfile();
     else if (this.activeView === 'admin') admin.render();
   },
 
@@ -453,6 +463,7 @@ const app = {
 
   // Helper render Product Card HTML
   renderProductCard(product) {
+    const isWished = store.wishlistIds.includes(product.id);
     return `
       <div class="product-card" data-slug="${product.slug}">
         <div class="product-thumb">
@@ -460,6 +471,9 @@ const app = {
             ${product.is_featured ? '<span class="badge badge-sale"><i class="fa-solid fa-fire"></i> Hot</span>' : ''}
             <span class="badge badge-hot">${product.brand_name || 'Chính Hãng'}</span>
           </div>
+          <button class="btn-wishlist-toggle ${isWished ? 'active' : ''}" data-product-id="${product.id}" title="${isWished ? 'Bỏ yêu thích' : 'Yêu thích'}">
+            <i class="fa-${isWished ? 'solid' : 'regular'} fa-heart"></i>
+          </button>
           <img src="${product.thumbnail_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600'}" alt="${product.name}" loading="lazy">
         </div>
 
@@ -492,11 +506,47 @@ const app = {
   attachProductCardEvents(container) {
     container.querySelectorAll('.product-card').forEach(card => {
       const slug = card.dataset.slug;
-      card.querySelector('.product-thumb').addEventListener('click', () => this.openProductDetailModal(slug));
+      card.querySelector('.product-thumb').addEventListener('click', (e) => {
+        if (!e.target.closest('.btn-wishlist-toggle')) {
+          this.openProductDetailModal(slug);
+        }
+      });
       card.querySelector('.prod-title').addEventListener('click', () => this.openProductDetailModal(slug));
       card.querySelector('.btn-quick-view').addEventListener('click', (e) => {
         e.stopPropagation();
         this.openProductDetailModal(slug);
+      });
+    });
+
+    // Sự kiện nút Yêu thích
+    container.querySelectorAll('.btn-wishlist-toggle').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!store.user) {
+          showToast('Vui lòng đăng nhập để lưu sản phẩm yêu thích!', 'info');
+          app.openAuthModal();
+          return;
+        }
+
+        const pid = parseInt(btn.dataset.productId, 10);
+        try {
+          const res = await api.toggleWishlist(pid);
+          if (res.in_wishlist) {
+            if (!store.wishlistIds.includes(pid)) store.wishlistIds.push(pid);
+            btn.classList.add('active');
+            btn.innerHTML = '<i class="fa-solid fa-heart"></i>';
+            btn.title = 'Bỏ yêu thích';
+          } else {
+            store.wishlistIds = store.wishlistIds.filter(id => id !== pid);
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fa-regular fa-heart"></i>';
+            btn.title = 'Yêu thích';
+          }
+          store.updateWishlistBadge();
+          showToast(res.message, 'success');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       });
     });
   },
@@ -578,6 +628,58 @@ const app = {
                 ${product.description || product.short_description || 'Dụng cụ thể thao chính hãng chất lượng cao.'}
               </p>
             </div>
+
+            <!-- Khu vực Đánh giá & Bình luận -->
+            <div style="border-top: 1px solid var(--border-subtle); padding-top: 22px; margin-top: 22px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h4 style="font-size: 1rem; text-transform: uppercase; color: #fff;">
+                  <i class="fa-solid fa-comments" style="color: var(--neon-cyan);"></i> Đánh Giá (${product.reviews ? product.reviews.length : 0})
+                </h4>
+                <div class="prod-rating">
+                  <i class="fa-solid fa-star" style="color: #ffb703;"></i>
+                  <strong>${product.stats ? product.stats.avg_rating : '5.0'} / 5.0</strong>
+                </div>
+              </div>
+
+              <!-- Form gửi đánh giá -->
+              <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+                <div style="font-size: 0.88rem; font-weight: 700; margin-bottom: 4px;">Đánh giá của bạn về sản phẩm này:</div>
+                <div class="rating-picker" id="modal-rating-picker" data-rating="5">
+                  <i class="fa-solid fa-star active" data-val="1"></i>
+                  <i class="fa-solid fa-star active" data-val="2"></i>
+                  <i class="fa-solid fa-star active" data-val="3"></i>
+                  <i class="fa-solid fa-star active" data-val="4"></i>
+                  <i class="fa-solid fa-star active" data-val="5"></i>
+                </div>
+                <textarea id="modal-review-comment" class="form-control" rows="2" placeholder="Nhận xét của bạn về chất lượng dụng cụ, cảm giác sử dụng..." style="margin-bottom: 10px;"></textarea>
+                <button class="btn btn-primary btn-sm" id="btn-submit-modal-review">
+                  <i class="fa-solid fa-paper-plane"></i> Gửi Đánh Giá
+                </button>
+              </div>
+
+              <!-- Danh sách bình luận -->
+              <div id="modal-reviews-list" style="display: flex; flex-direction: column; gap: 12px; max-height: 260px; overflow-y: auto;">
+                ${(!product.reviews || product.reviews.length === 0) ? `
+                  <div style="text-align: center; color: var(--text-muted); font-size: 0.88rem; padding: 16px;">
+                    Chưa có đánh giá nào. Hãy là người đầu tiên trải nghiệm và đánh giá sản phẩm này!
+                  </div>
+                ` : product.reviews.map(r => `
+                  <div style="background: var(--bg-card); padding: 12px 16px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <div style="font-weight: 700; font-size: 0.88rem; color: #fff;">
+                        ${r.user_name || 'Khách hàng'}
+                        ${r.is_verified_buyer ? '<span class="badge badge-stock" style="font-size: 0.7rem; margin-left: 6px;"><i class="fa-solid fa-circle-check"></i> Đã mua hàng</span>' : ''}
+                      </div>
+                      <div style="color: #ffb703; font-size: 0.82rem;">
+                        ${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}
+                      </div>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0; line-height: 1.5;">${r.comment || 'Sản phẩm thể thao rất tốt, đúng mô tả.'}</p>
+                    <div style="font-size: 0.75rem; color: var(--text-dark); margin-top: 4px;">${new Date(r.created_at).toLocaleDateString('vi-VN')}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -609,6 +711,69 @@ const app = {
         if (val < max) qtyInput.value = val + 1;
         else showToast(`Kho chỉ còn ${max} sản phẩm!`, 'info');
       });
+
+      // Gắn sự kiện chọn số sao đánh giá
+      const ratingPicker = document.getElementById('modal-rating-picker');
+      if (ratingPicker) {
+        ratingPicker.querySelectorAll('i').forEach(star => {
+          star.addEventListener('click', () => {
+            const val = parseInt(star.dataset.val, 10);
+            ratingPicker.dataset.rating = val;
+            ratingPicker.querySelectorAll('i').forEach(s => {
+              const sVal = parseInt(s.dataset.val, 10);
+              s.classList.toggle('active', sVal <= val);
+            });
+          });
+        });
+      }
+
+      // Gắn sự kiện gửi đánh giá
+      const btnSubmitReview = document.getElementById('btn-submit-modal-review');
+      if (btnSubmitReview) {
+        btnSubmitReview.addEventListener('click', async () => {
+          if (!store.user) {
+            showToast('Vui lòng đăng nhập để gửi đánh giá!', 'info');
+            app.openAuthModal();
+            return;
+          }
+
+          const starRating = parseInt(ratingPicker.dataset.rating || '5', 10);
+          const comment = document.getElementById('modal-review-comment').value.trim();
+
+          try {
+            const res = await api.createReview({
+              product_id: product.id,
+              rating: starRating,
+              comment
+            });
+
+            showToast(res.message, 'success');
+            // Cập nhật ngay vào danh sách review trên modal
+            const list = document.getElementById('modal-reviews-list');
+            if (list) {
+              const newReviewHtml = `
+                <div style="background: var(--bg-card); padding: 12px 16px; border-radius: var(--radius-sm); border: 1px solid var(--neon-cyan);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div style="font-weight: 700; font-size: 0.88rem; color: #fff;">
+                      ${store.user.full_name}
+                      <span class="badge badge-sale" style="font-size: 0.7rem; margin-left: 6px;">Vừa gửi</span>
+                    </div>
+                    <div style="color: #ffb703; font-size: 0.82rem;">
+                      ${'★'.repeat(starRating)}${'☆'.repeat(5 - starRating)}
+                    </div>
+                  </div>
+                  <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0; line-height: 1.5;">${comment || 'Sản phẩm thể thao rất tốt.'}</p>
+                  <div style="font-size: 0.75rem; color: var(--text-dark); margin-top: 4px;">Vừa xong</div>
+                </div>
+              `;
+              list.insertAdjacentHTML('afterbegin', newReviewHtml);
+            }
+            document.getElementById('modal-review-comment').value = '';
+          } catch (rErr) {
+            showToast(rErr.message, 'error');
+          }
+        });
+      }
 
       // Thêm vào giỏ hàng
       document.getElementById('btn-modal-add-cart').addEventListener('click', async () => {
@@ -818,7 +983,8 @@ const app = {
             <label class="form-label">Phương thức thanh toán</label>
             <select id="order-payment" class="form-control">
               <option value="cod">Thanh toán khi nhận hàng (COD)</option>
-              <option value="banking">Chuyển khoản ngân hàng (QR Pay)</option>
+              <option value="banking">Chuyển khoản ngân hàng (VietQR Pay)</option>
+              <option value="momo">Ví điện tử MoMo (Quét mã MoMo QR động)</option>
             </select>
           </div>
           <div class="form-group">
@@ -872,22 +1038,96 @@ const app = {
           store.setCart(cartRes.data);
 
           // Hiển thị màn hình thành công
+          const isBanking = res.data.payment_method === 'banking';
+          const isMomo = res.data.payment_method === 'momo';
+          const vietQrUrl = 'assets/images/qr_vietqr.png';
+          const momoQrUrl = 'assets/images/qr_momo.png';
+
           body.innerHTML = `
-            <div style="text-align: center; padding: 40px 10px;">
-              <div class="cat-icon-wrap" style="color: var(--neon-green); width: 80px; height: 80px;">
+            <div style="text-align: center; padding: 24px 10px;">
+              <div class="cat-icon-wrap" style="color: var(--neon-green); width: 68px; height: 68px; margin: 0 auto 12px;">
                 <i class="fa-solid fa-circle-check fa-2x"></i>
               </div>
-              <h2 style="font-size: 1.5rem; margin-bottom: 8px;">Đặt Hàng Thành Công!</h2>
-              <p style="color: var(--text-muted); font-size: 0.9rem;">Cảm ơn bạn đã tin tưởng Sports Store.</p>
+              <h2 style="font-size: 1.4rem; margin-bottom: 6px;">Đặt Hàng Thành Công!</h2>
+              <p style="color: var(--text-muted); font-size: 0.88rem;">Cảm ơn bạn đã tin tưởng SportZone.</p>
               
-              <div style="background: var(--bg-card); padding: 16px; border-radius: var(--radius-md); margin: 24px 0; border: 1px dashed var(--neon-cyan);">
-                <div style="font-size: 0.82rem; color: var(--text-muted);">MÃ ĐƠN HÀNG CỦA BẠN:</div>
-                <strong style="font-size: 1.3rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${res.data.order_code}</strong>
+              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-md); margin: 16px 0; border: 1px dashed var(--neon-cyan);">
+                <div style="font-size: 0.8rem; color: var(--text-muted);">MÃ ĐƠN HÀNG CỦA BẠN:</div>
+                <strong style="font-size: 1.25rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${res.data.order_code}</strong>
+                <div style="font-size: 0.85rem; color: #fff; margin-top: 4px;">Tổng thanh toán: <strong style="color: var(--neon-green);">${formatVND(res.data.total_amount)}</strong></div>
               </div>
 
-              <a href="#tracking?code=${res.data.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer()">
-                <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Hành Trình Đơn Hàng
-              </a>
+              ${isBanking ? `
+                <div class="vietqr-card">
+                  <div style="font-weight: 800; color: var(--neon-cyan); font-size: 0.95rem; margin-bottom: 4px;">
+                    <i class="fa-solid fa-qrcode"></i> QUÉT MÃ VIETQR ĐỂ THANH TOÁN
+                  </div>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">Mở app ngân hàng bất kỳ để quét mã chuyển khoản:</p>
+                  
+                  <img src="${vietQrUrl}" class="vietqr-img" alt="VietQR Techcombank Sportzone ${res.data.order_code}">
+
+                  <div class="vietqr-copy-row">
+                    <span>Ngân hàng: <strong>Techcombank</strong></span>
+                  </div>
+                  <div class="vietqr-copy-row">
+                    <span>Số tài khoản: <strong>1907 2002 4640 14</strong></span>
+                    <button class="btn-copy" onclick="navigator.clipboard.writeText('19072002464014'); showToast('Đã copy số tài khoản!', 'info');">Copy</button>
+                  </div>
+                  <div class="vietqr-copy-row">
+                    <span>Tên tài khoản: <strong>Sportzone</strong></span>
+                    <button class="btn-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
+                  </div>
+                  <div class="vietqr-copy-row">
+                    <span>Số tiền: <strong style="color: var(--neon-green);">${formatVND(res.data.total_amount)}</strong></span>
+                    <button class="btn-copy" onclick="navigator.clipboard.writeText('${res.data.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
+                  </div>
+                  <div class="vietqr-copy-row">
+                    <span>Nội dung CK: <strong style="color: var(--neon-cyan);">${res.data.order_code}</strong></span>
+                    <button class="btn-copy" onclick="navigator.clipboard.writeText('${res.data.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${isMomo ? `
+                <div class="momo-card">
+                  <div class="momo-header">
+                    <i class="fa-solid fa-wallet"></i> THANH TOÁN VÍ MOMO QR
+                    <span class="momo-badge">MoMo QR</span>
+                  </div>
+                  <p style="font-size: 0.8rem; color: #ffb8da; margin-bottom: 10px;">Mở ứng dụng MoMo và quét mã bên dưới để thanh toán:</p>
+                  
+                  <img src="${momoQrUrl}" class="momo-img" alt="MoMo QR Sportzone ${res.data.order_code}">
+
+                  <div class="momo-copy-row">
+                    <span>Tên tài khoản: <strong>Sportzone</strong></span>
+                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
+                  </div>
+                  <div class="momo-copy-row">
+                    <span>Ví nhận: <strong>Ví MoMo Sportzone</strong></span>
+                  </div>
+                  <div class="momo-copy-row">
+                    <span>Số tiền: <strong style="color: #ff3e98; font-size: 1rem;">${formatVND(res.data.total_amount)}</strong></span>
+                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${res.data.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
+                  </div>
+                  <div class="momo-copy-row">
+                    <span>Nội dung: <strong style="color: #ff5da8;">${res.data.order_code}</strong></span>
+                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${res.data.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
+                  </div>
+                  
+                  <a href="momo://?action=payWithApp&amount=${res.data.total_amount}&note=${encodeURIComponent(res.data.order_code)}" class="btn-momo-app">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở App MoMo Để Thanh Toán
+                  </a>
+                </div>
+              ` : ''}
+
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
+                <a href="#tracking?code=${res.data.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer()">
+                  <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Hành Trình Đơn Hàng
+                </a>
+                <a href="#profile" class="btn btn-outline btn-sm" onclick="app.closeCartDrawer()">
+                  <i class="fa-solid fa-user-circle"></i> Xem Trong Đơn Hàng Của Tôi
+                </a>
+              </div>
             </div>
           `;
           footer.style.display = 'none';
@@ -994,6 +1234,69 @@ const app = {
               </div>
             `).join('')}
           </div>
+
+          ${order.payment_status === 'unpaid' && order.payment_method === 'momo' ? `
+            <div class="momo-card" style="margin-top: 24px;">
+              <div class="momo-header">
+                <i class="fa-solid fa-wallet"></i> MÃ MOMO QR THANH TOÁN ĐƠN HÀNG
+                <span class="momo-badge">MoMo QR</span>
+              </div>
+              <p style="font-size: 0.8rem; color: #ffb8da; margin-bottom: 10px;">Đơn hàng chưa được thanh toán. Quét mã bên dưới để hoàn tất:</p>
+              
+              <img src="assets/images/qr_momo.png" class="momo-img" alt="MoMo QR Sportzone ${order.order_code}">
+
+              <div class="momo-copy-row">
+                <span>Tên tài khoản: <strong>Sportzone</strong></span>
+                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
+              </div>
+              <div class="momo-copy-row">
+                <span>Ví nhận: <strong>Ví MoMo Sportzone</strong></span>
+              </div>
+              <div class="momo-copy-row">
+                <span>Số tiền: <strong style="color: #ff3e98; font-size: 1rem;">${formatVND(order.total_amount)}</strong></span>
+                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${order.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
+              </div>
+              <div class="momo-copy-row">
+                <span>Nội dung: <strong style="color: #ff5da8;">${order.order_code}</strong></span>
+                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${order.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
+              </div>
+              
+              <a href="momo://?action=payWithApp&amount=${order.total_amount}&note=${encodeURIComponent(order.order_code)}" class="btn-momo-app">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở App MoMo Để Thanh Toán
+              </a>
+            </div>
+          ` : ''}
+
+          ${order.payment_status === 'unpaid' && order.payment_method === 'banking' ? `
+            <div class="vietqr-card" style="margin-top: 24px;">
+              <div style="font-weight: 800; color: var(--neon-cyan); font-size: 0.95rem; margin-bottom: 4px;">
+                <i class="fa-solid fa-qrcode"></i> QUÉT MÃ VIETQR ĐỂ THANH TOÁN
+              </div>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">Đơn hàng chưa thanh toán. Quét mã bằng app ngân hàng để chuyển khoản:</p>
+              
+              <img src="assets/images/qr_vietqr.png" class="vietqr-img" alt="VietQR Techcombank Sportzone ${order.order_code}">
+
+              <div class="vietqr-copy-row">
+                <span>Ngân hàng: <strong>Techcombank</strong></span>
+              </div>
+              <div class="vietqr-copy-row">
+                <span>Số tài khoản: <strong>1907 2002 4640 14</strong></span>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText('19072002464014'); showToast('Đã copy số tài khoản!', 'info');">Copy</button>
+              </div>
+              <div class="vietqr-copy-row">
+                <span>Tên tài khoản: <strong>Sportzone</strong></span>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
+              </div>
+              <div class="vietqr-copy-row">
+                <span>Số tiền: <strong style="color: var(--neon-green);">${formatVND(order.total_amount)}</strong></span>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText('${order.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
+              </div>
+              <div class="vietqr-copy-row">
+                <span>Nội dung CK: <strong style="color: var(--neon-cyan);">${order.order_code}</strong></span>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText('${order.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
+              </div>
+            </div>
+          ` : ''}
         </div>
       `;
 
@@ -1049,65 +1352,670 @@ const app = {
       });
     }
 
-    // Nút user trên Navbar -> Mở Modal Auth
+    // Nút user trên Navbar -> Vào trang cá nhân hoặc mở modal đăng nhập
     const userBtn = document.getElementById('nav-user-btn');
     if (userBtn) {
       userBtn.addEventListener('click', () => {
         if (store.user) {
-          if (confirm(`Bạn đang đăng nhập với tài khoản: ${store.user.full_name} (${store.user.email}). Bạn có muốn đăng xuất không?`)) {
-            store.logout();
-          }
+          window.location.hash = '#profile';
         } else {
+          this.openAuthModal();
+        }
+      });
+    }
+
+    // Nút danh sách yêu thích Navbar
+    const navWishBtn = document.getElementById('nav-wishlist-btn');
+    if (navWishBtn) {
+      navWishBtn.addEventListener('click', () => {
+        if (store.user) {
+          window.location.hash = '#profile?tab=wishlist';
+        } else {
+          showToast('Vui lòng đăng nhập để xem danh sách yêu thích!', 'info');
           this.openAuthModal();
         }
       });
     }
   },
 
-  // Modal Đăng nhập / Đăng ký cho khách hàng
-  openAuthModal() {
+  // --- 7. MODAL XÁC THỰC (ĐĂNG NHẬP & ĐĂNG KÝ 2 TAB) ---
+  openAuthModal(defaultTab = 'login') {
     const modal = document.getElementById('generic-modal');
     const modalContent = document.getElementById('generic-modal-content');
     if (!modal || !modalContent) return;
 
     modalContent.innerHTML = `
-      <div style="max-width: 400px; margin: 0 auto;">
-        <h2 style="font-size: 1.6rem; text-align: center; margin-bottom: 20px;">Tài Khoản Sports Store</h2>
-
-        <form id="form-customer-login">
-          <div class="form-group">
-            <label class="form-label">Tài khoản hoặc Email</label>
-            <input type="text" id="cust-login-email" class="form-control" placeholder="admin hoặc email@example.com" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Mật khẩu</label>
-            <input type="password" id="cust-login-pwd" class="form-control" placeholder="••••••••" required>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
-            Đăng Nhập
+      <div style="max-width: 440px; margin: 0 auto;">
+        <div class="auth-nav-tabs">
+          <button class="auth-nav-tab ${defaultTab === 'login' ? 'active' : ''}" id="tab-btn-login">
+            <i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập
           </button>
-        </form>
+          <button class="auth-nav-tab ${defaultTab === 'register' ? 'active' : ''}" id="tab-btn-register">
+            <i class="fa-solid fa-user-plus"></i> Đăng Ký
+          </button>
+        </div>
 
-        <div style="text-align: center; margin-top: 20px; font-size: 0.85rem; color: var(--text-muted);">
-          Bạn là quản trị viên? <a href="#admin" style="color: var(--neon-cyan);" onclick="document.getElementById('generic-modal').classList.remove('active');">Đăng nhập Admin tại đây</a>
+        <!-- FORM ĐĂNG NHẬP -->
+        <div id="auth-panel-login" style="display: ${defaultTab === 'login' ? 'block' : 'none'};">
+          <form id="form-customer-login">
+            <div class="form-group">
+              <label class="form-label">Tên tài khoản hoặc Email</label>
+              <input type="text" id="cust-login-email" class="form-control" placeholder="Nhập tên tài khoản hoặc email..." required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mật khẩu</label>
+              <input type="password" id="cust-login-pwd" class="form-control" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+              <i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập
+            </button>
+          </form>
+
+          <div style="text-align: center; margin-top: 18px; font-size: 0.85rem; color: var(--text-muted);">
+            Chưa có tài khoản? <a href="javascript:void(0)" id="link-switch-register" style="color: var(--neon-cyan); font-weight: 700;">Đăng ký ngay</a>
+          </div>
+        </div>
+
+        <!-- FORM ĐĂNG KÝ -->
+        <div id="auth-panel-register" style="display: ${defaultTab === 'register' ? 'block' : 'none'};">
+          <form id="form-customer-register">
+            <div class="form-group">
+              <label class="form-label">Tên tài khoản (Username) *</label>
+              <input type="text" id="reg-username" class="form-control" placeholder="VD: sport_fan99, ducminh..." required minlength="3">
+              <small style="color: var(--text-muted); font-size: 0.75rem;">Dùng để đăng nhập vào hệ thống</small>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Họ và tên *</label>
+              <input type="text" id="reg-name" class="form-control" placeholder="Nguyễn Văn A" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Địa chỉ Email *</label>
+              <input type="email" id="reg-email" class="form-control" placeholder="email@example.com" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Số điện thoại</label>
+              <input type="tel" id="reg-phone" class="form-control" placeholder="0901234567">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mật khẩu * (Tối thiểu 6 ký tự)</label>
+              <input type="password" id="reg-pwd" class="form-control" placeholder="••••••••" required minlength="6">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Xác nhận mật khẩu *</label>
+              <input type="password" id="reg-pwd-confirm" class="form-control" placeholder="••••••••" required minlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+              <i class="fa-solid fa-user-plus"></i> Tạo Tài Khoản Mới
+            </button>
+          </form>
+
+          <div style="text-align: center; margin-top: 18px; font-size: 0.85rem; color: var(--text-muted);">
+            Đã có tài khoản? <a href="javascript:void(0)" id="link-switch-login" style="color: var(--neon-cyan); font-weight: 700;">Đăng nhập</a>
+          </div>
         </div>
       </div>
     `;
 
     modal.classList.add('active');
 
+    // Tab switcher
+    const loginTabBtn = document.getElementById('tab-btn-login');
+    const regTabBtn = document.getElementById('tab-btn-register');
+    const loginPanel = document.getElementById('auth-panel-login');
+    const regPanel = document.getElementById('auth-panel-register');
+
+    const switchToTab = (tab) => {
+      loginTabBtn.classList.toggle('active', tab === 'login');
+      regTabBtn.classList.toggle('active', tab === 'register');
+      loginPanel.style.display = tab === 'login' ? 'block' : 'none';
+      regPanel.style.display = tab === 'register' ? 'block' : 'none';
+    };
+
+    loginTabBtn.addEventListener('click', () => switchToTab('login'));
+    regTabBtn.addEventListener('click', () => switchToTab('register'));
+    document.getElementById('link-switch-register').addEventListener('click', () => switchToTab('register'));
+    document.getElementById('link-switch-login').addEventListener('click', () => switchToTab('login'));
+
+    // Xử lý submit Đăng Nhập
     document.getElementById('form-customer-login').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const email = document.getElementById('cust-login-email').value.trim();
+      const identifier = document.getElementById('cust-login-email').value.trim();
       const password = document.getElementById('cust-login-pwd').value;
 
       try {
-        const res = await api.login(email, password);
+        const res = await api.login(identifier, password);
         store.setUser(res.data.user, res.data.token);
+
+        try {
+          const wRes = await api.getWishlistIds();
+          store.setWishlistIds(wRes.data || []);
+        } catch (we) {}
+
         showToast(`Xin chào ${res.data.user.full_name}!`, 'success');
         modal.classList.remove('active');
+        if (window.location.hash === '#profile') this.renderProfile();
       } catch (err) {
         showToast(err.message, 'error');
+      }
+    });
+
+    // Xử lý submit Đăng Ký
+    document.getElementById('form-customer-register').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('reg-username').value.trim();
+      const name = document.getElementById('reg-name').value.trim();
+      const email = document.getElementById('reg-email').value.trim();
+      const phone = document.getElementById('reg-phone').value.trim();
+      const pwd = document.getElementById('reg-pwd').value;
+      const pwdConfirm = document.getElementById('reg-pwd-confirm').value;
+
+      if (username.length < 3) {
+        showToast('Tên tài khoản phải có ít nhất 3 ký tự!', 'error');
+        return;
+      }
+
+      if (pwd !== pwdConfirm) {
+        showToast('Mật khẩu xác nhận không khớp!', 'error');
+        return;
+      }
+
+      try {
+        const res = await api.register({ username, full_name: name, email, phone, password: pwd });
+        store.setUser(res.data.user, res.data.token);
+        showToast('Đăng ký tài khoản thành công! Chào mừng bạn đến với SportZone.', 'success');
+        modal.classList.remove('active');
+        if (window.location.hash === '#profile') this.renderProfile();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  },
+
+  // --- 8. TRANG CÁ NHÂN & ĐƠN HÀNG CỦA TÔI (CUSTOMER PORTAL) ---
+  async renderProfile() {
+    const container = document.getElementById('view-profile');
+    if (!container) return;
+
+    if (!store.user) {
+      container.innerHTML = `
+        <div style="max-width: 480px; margin: 80px auto; padding: 40px; background: var(--bg-surface); border-radius: var(--radius-lg); text-align: center; border: 1px solid var(--border-subtle);">
+          <div class="cat-icon-wrap" style="color: var(--neon-cyan); margin: 0 auto 16px;"><i class="fa-solid fa-user-lock fa-2x"></i></div>
+          <h2 style="font-size: 1.5rem; margin-bottom: 8px;">Yêu Cầu Đăng Nhập</h2>
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px;">Vui lòng đăng nhập hoặc tạo tài khoản để quản lý đơn hàng, danh sách yêu thích và sổ địa chỉ.</p>
+          <button class="btn btn-primary" onclick="app.openAuthModal('login')">
+            <i class="fa-solid fa-right-to-bracket"></i> Đăng Nhập Ngay
+          </button>
+          <button class="btn btn-outline" style="margin-left: 8px;" onclick="app.openAuthModal('register')">
+            Đăng Ký
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    // Đọc tab từ url hash query
+    const hash = window.location.hash;
+    const urlParams = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
+    const activeTab = urlParams.get('tab') || 'orders';
+
+    container.innerHTML = `
+      <div class="profile-portal">
+        <div class="profile-header">
+          <div>
+            <span class="section-tag"><i class="fa-solid fa-circle-user"></i> Tài Khoản Khách Hàng</span>
+            <h1 class="section-title">Xin chào, <span style="color: var(--neon-cyan);">${store.user.full_name}</span></h1>
+            <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 4px;">Email: <strong>${store.user.email}</strong> • Vai trò: <strong>${store.user.role}</strong></p>
+          </div>
+          <div>
+            <button class="btn btn-outline btn-sm" id="btn-profile-logout" style="color: var(--neon-red); border-color: rgba(255,51,102,0.4);">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng Xuất
+            </button>
+          </div>
+        </div>
+
+        <div class="profile-nav-tabs">
+          <button class="profile-tab ${activeTab === 'orders' ? 'active' : ''}" data-tab="orders">
+            <i class="fa-solid fa-boxes-packing"></i> Đơn Hàng Của Tôi
+          </button>
+          <button class="profile-tab ${activeTab === 'addresses' ? 'active' : ''}" data-tab="addresses">
+            <i class="fa-solid fa-location-dot"></i> Sổ Địa Chỉ
+          </button>
+          <button class="profile-tab ${activeTab === 'wishlist' ? 'active' : ''}" data-tab="wishlist">
+            <i class="fa-solid fa-heart" style="color: #ff3366;"></i> Sản Phẩm Yêu Thích (${store.wishlistIds.length})
+          </button>
+          <button class="profile-tab ${activeTab === 'account' ? 'active' : ''}" data-tab="account">
+            <i class="fa-solid fa-gear"></i> Cài Đặt Tài Khoản
+          </button>
+        </div>
+
+        <div id="profile-tab-content">
+          <div style="text-align: center; padding: 40px;"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
+        </div>
+      </div>
+    `;
+
+    // Gắn sự kiện chuyển tab
+    container.querySelectorAll('.profile-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        window.location.hash = `#profile?tab=${tab}`;
+      });
+    });
+
+    document.getElementById('btn-profile-logout').addEventListener('click', () => {
+      store.logout();
+    });
+
+    // Tải nội dung tab tương ứng
+    if (activeTab === 'orders') await this.loadProfileOrdersTab();
+    else if (activeTab === 'addresses') await this.loadProfileAddressesTab();
+    else if (activeTab === 'wishlist') await this.loadProfileWishlistTab();
+    else if (activeTab === 'account') await this.loadProfileAccountTab();
+  },
+
+  // 8.1 Tab Đơn Hàng Của Tôi
+  async loadProfileOrdersTab() {
+    const tabContent = document.getElementById('profile-tab-content');
+    if (!tabContent) return;
+
+    try {
+      const res = await api.getUserOrders({ limit: 20 });
+      const orders = res.data;
+
+      if (!orders || orders.length === 0) {
+        tabContent.innerHTML = `
+          <div style="text-align: center; padding: 60px 20px; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
+            <i class="fa-solid fa-box-open fa-3x" style="color: var(--text-dark); margin-bottom: 16px;"></i>
+            <h3>Bạn chưa có đơn đặt hàng nào</h3>
+            <p style="color: var(--text-muted); margin-top: 6px;">Hãy khám phá các trang thiết bị thể thao chất lượng tại SportZone!</p>
+            <a href="#shop" class="btn btn-cyan btn-sm" style="margin-top: 18px;">
+              <i class="fa-solid fa-fire"></i> Khám Phá Cửa Hàng
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      tabContent.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          ${orders.map(ord => `
+            <div class="glass-panel" style="padding: 22px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                <div>
+                  <span class="badge ${ord.order_status === 'delivered' ? 'badge-stock' : (ord.order_status === 'cancelled' ? 'badge-sale' : 'badge-hot')}">
+                    ${ord.order_status.toUpperCase()}
+                  </span>
+                  <strong style="font-size: 1.15rem; color: var(--neon-cyan); margin-left: 10px;">${ord.order_code}</strong>
+                  <span style="font-size: 0.82rem; color: var(--text-muted); margin-left: 8px;">(${new Date(ord.created_at).toLocaleDateString('vi-VN')})</span>
+                </div>
+                <div>
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">Tổng thanh toán: </span>
+                  <strong style="font-size: 1.2rem; color: #fff;">${formatVND(ord.total_amount)}</strong>
+                </div>
+              </div>
+
+              <!-- Danh sách items -->
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                ${ord.items ? ord.items.map(it => `
+                  <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: var(--radius-sm);">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                      <img src="${it.image_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=100'}" style="width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm);">
+                      <div>
+                        <div style="font-weight: 700; font-size: 0.9rem;">${it.product_name}</div>
+                        <small style="color: var(--neon-cyan);">${it.variant_label || 'Tiêu chuẩn'}</small>
+                      </div>
+                    </div>
+                    <div style="font-size: 0.88rem;">
+                      ${formatVND(it.unit_price)} × <strong>${it.quantity}</strong> = <strong>${formatVND(it.total_price)}</strong>
+                    </div>
+                  </div>
+                `).join('') : ''}
+              </div>
+
+              <!-- Nút hành động -->
+              <div style="display: flex; justify-content: flex-end; gap: 10px; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 14px;">
+                <a href="#tracking?code=${ord.order_code}" class="btn btn-outline btn-sm">
+                  <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Vận Chuyển
+                </a>
+
+                ${ord.order_status === 'pending' ? `
+                  <button class="btn btn-sm btn-cancel-order" data-code="${ord.order_code}" style="background: rgba(255,51,102,0.15); color: var(--neon-red); border: 1px solid var(--neon-red);">
+                    <i class="fa-solid fa-ban"></i> Hủy Đơn Hàng
+                  </button>
+                ` : ''}
+
+                ${ord.order_status === 'delivered' ? `
+                  <button class="btn btn-cyan btn-sm btn-review-order" data-slug="${ord.items && ord.items[0] ? ord.items[0].product_slug : ''}">
+                    <i class="fa-solid fa-star"></i> Đánh Giá Sản Phẩm
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      // Gắn sự kiện Hủy đơn hàng
+      tabContent.querySelectorAll('.btn-cancel-order').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const code = btn.dataset.code;
+          const reason = prompt(`Vui lòng nhập lý do bạn muốn hủy đơn hàng ${code}:`, 'Thay đổi nhu cầu mua sắm');
+          if (reason !== null) {
+            try {
+              const res = await api.cancelUserOrder(code, reason || 'Khách hủy');
+              showToast(res.message, 'success');
+              this.loadProfileOrdersTab();
+            } catch (cErr) {
+              showToast(cErr.message, 'error');
+            }
+          }
+        });
+      });
+
+      // Gắn sự kiện Đánh giá sản phẩm đã giao
+      tabContent.querySelectorAll('.btn-review-order').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const slug = btn.dataset.slug;
+          if (slug) this.openProductDetailModal(slug);
+        });
+      });
+
+    } catch (err) {
+      tabContent.innerHTML = `<div style="color: var(--neon-red); padding: 40px; text-align: center;">Lỗi tải đơn hàng: ${err.message}</div>`;
+    }
+  },
+
+  // 8.2 Tab Sổ Địa Chỉ
+  async loadProfileAddressesTab() {
+    const tabContent = document.getElementById('profile-tab-content');
+    if (!tabContent) return;
+
+    try {
+      const res = await api.getAddresses();
+      const addresses = res.data;
+
+      tabContent.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; align-items: start;">
+          <!-- Danh sách địa chỉ đã lưu -->
+          <div>
+            <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+              <i class="fa-solid fa-list-check" style="color: var(--neon-cyan);"></i> Địa Chỉ Nhận Hàng Của Bạn (${addresses.length})
+            </h3>
+            
+            ${addresses.length === 0 ? `
+              <div style="padding: 30px; background: var(--bg-surface); border-radius: var(--radius-md); text-align: center; color: var(--text-muted); border: 1px solid var(--border-subtle);">
+                Bạn chưa lưu địa chỉ nào. Hãy thêm địa chỉ để thanh toán nhanh hơn!
+              </div>
+            ` : `
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                ${addresses.map(a => `
+                  <div class="glass-panel" style="padding: 16px 20px; border-left: 4px solid ${a.is_default ? 'var(--neon-green)' : 'var(--border-subtle)'};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <strong style="color: #fff; font-size: 1rem;">${a.receiver_name}</strong>
+                      ${a.is_default ? '<span class="badge badge-stock"><i class="fa-solid fa-check"></i> Mặc định</span>' : ''}
+                    </div>
+                    <div style="font-size: 0.88rem; color: var(--neon-cyan); margin-bottom: 4px;"><i class="fa-solid fa-phone"></i> ${a.receiver_phone}</div>
+                    <div style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">${a.street_address}${a.ward ? ', ' + a.ward : ''}${a.district ? ', ' + a.district : ''}, ${a.city_province}</div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-subtle);">
+                      ${!a.is_default ? `
+                        <button class="btn btn-outline btn-sm btn-set-default-addr" data-id="${a.id}" style="padding: 2px 8px; font-size: 0.75rem;">
+                          Đặt làm mặc định
+                        </button>
+                      ` : ''}
+                      <button class="btn btn-outline btn-sm btn-del-addr" data-id="${a.id}" style="padding: 2px 8px; font-size: 0.75rem; color: var(--neon-red); border-color: rgba(255,51,102,0.4);">
+                        <i class="fa-solid fa-trash"></i> Xóa
+                      </button>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+
+          <!-- Form thêm địa chỉ mới -->
+          <div class="glass-panel" style="padding: 24px;">
+            <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+              <i class="fa-solid fa-plus-circle" style="color: var(--neon-cyan);"></i> Thêm Địa Chỉ Nhận Hàng Mới
+            </h3>
+            <form id="form-add-address">
+              <div class="form-group">
+                <label class="form-label">Tên người nhận hàng *</label>
+                <input type="text" id="new-addr-name" class="form-control" value="${store.user.full_name}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Số điện thoại liên hệ *</label>
+                <input type="tel" id="new-addr-phone" class="form-control" value="${store.user.phone || ''}" placeholder="0901234567" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Số nhà, Tên đường chi tiết *</label>
+                <input type="text" id="new-addr-street" class="form-control" placeholder="123 Đường Thể Thao..." required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phường / Xã</label>
+                <input type="text" id="new-addr-ward" class="form-control" placeholder="Phường Bến Nghé">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Quận / Huyện</label>
+                <input type="text" id="new-addr-district" class="form-control" placeholder="Quận 1">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tỉnh / Thành phố *</label>
+                <input type="text" id="new-addr-city" class="form-control" placeholder="Hồ Chí Minh hoặc Hà Nội..." required>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 0.88rem; cursor: pointer;">
+                  <input type="checkbox" id="new-addr-default" checked> Đặt làm địa chỉ mặc định
+                </label>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%;">
+                <i class="fa-solid fa-floppy-disk"></i> Lưu Địa Chỉ
+              </button>
+            </form>
+          </div>
+        </div>
+      `;
+
+      // Xử lý thêm địa chỉ
+      document.getElementById('form-add-address').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          await api.addAddress({
+            receiver_name: document.getElementById('new-addr-name').value.trim(),
+            receiver_phone: document.getElementById('new-addr-phone').value.trim(),
+            street_address: document.getElementById('new-addr-street').value.trim(),
+            ward: document.getElementById('new-addr-ward').value.trim(),
+            district: document.getElementById('new-addr-district').value.trim(),
+            city_province: document.getElementById('new-addr-city').value.trim(),
+            is_default: document.getElementById('new-addr-default').checked
+          });
+          showToast('Đã thêm địa chỉ mới thành công!', 'success');
+          this.loadProfileAddressesTab();
+        } catch (aErr) {
+          showToast(aErr.message, 'error');
+        }
+      });
+
+      // Xử lý đặt mặc định
+      tabContent.querySelectorAll('.btn-set-default-addr').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await api.setDefaultAddress(btn.dataset.id);
+            showToast('Đã đặt làm địa chỉ mặc định!', 'success');
+            this.loadProfileAddressesTab();
+          } catch (dErr) {
+            showToast(dErr.message, 'error');
+          }
+        });
+      });
+
+      // Xử lý xóa địa chỉ
+      tabContent.querySelectorAll('.btn-del-addr').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (confirm('Bạn có chắc chắn muốn xóa địa chỉ nhận hàng này không?')) {
+            try {
+              await api.deleteAddress(btn.dataset.id);
+              showToast('Đã xóa địa chỉ thành công!', 'success');
+              this.loadProfileAddressesTab();
+            } catch (xErr) {
+              showToast(xErr.message, 'error');
+            }
+          }
+        });
+      });
+
+    } catch (err) {
+      tabContent.innerHTML = `<div style="color: var(--neon-red); padding: 40px; text-align: center;">Lỗi: ${err.message}</div>`;
+    }
+  },
+
+  // 8.3 Tab Sản Phẩm Yêu Thích (Wishlist)
+  async loadProfileWishlistTab() {
+    const tabContent = document.getElementById('profile-tab-content');
+    if (!tabContent) return;
+
+    try {
+      const res = await api.getWishlist();
+      const items = res.data;
+
+      if (!items || items.length === 0) {
+        tabContent.innerHTML = `
+          <div style="text-align: center; padding: 60px 20px; background: var(--bg-surface); border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
+            <i class="fa-regular fa-heart fa-3x" style="color: #ff3366; margin-bottom: 16px;"></i>
+            <h3>Danh sách yêu thích đang trống</h3>
+            <p style="color: var(--text-muted); margin-top: 6px;">Bấm vào biểu tượng trái tim ở góc mỗi sản phẩm để lưu lại những món bạn thích nhất!</p>
+            <a href="#shop" class="btn btn-cyan btn-sm" style="margin-top: 18px;">
+              <i class="fa-solid fa-bag-shopping"></i> Đi Mua Sắm Ngay
+            </a>
+          </div>
+        `;
+        return;
+      }
+
+      tabContent.innerHTML = `
+        <div class="products-grid">
+          ${items.map(p => `
+            <div class="product-card" data-slug="${p.slug}">
+              <div class="product-thumb">
+                <button class="btn-wishlist-toggle active" data-product-id="${p.product_id}" title="Bỏ yêu thích">
+                  <i class="fa-solid fa-heart"></i>
+                </button>
+                <img src="${p.thumbnail_url || 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600'}" alt="${p.name}">
+              </div>
+              <div class="product-body">
+                <div class="prod-brand">${p.brand_name} • ${p.category_name}</div>
+                <h3 class="prod-title">${p.name}</h3>
+                <div class="prod-price-box">
+                  <span class="current-price">${formatVND(p.base_price)}</span>
+                  <button class="btn btn-primary btn-sm btn-quick-view" data-slug="${p.slug}">
+                    <i class="fa-solid fa-cart-shopping"></i> Mua Ngay
+                  </button>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      this.attachProductCardEvents(tabContent);
+
+    } catch (err) {
+      tabContent.innerHTML = `<div style="color: var(--neon-red); padding: 40px; text-align: center;">Lỗi tải danh sách yêu thích: ${err.message}</div>`;
+    }
+  },
+
+  // 8.4 Tab Cài Đặt Tài Khoản & Đổi Mật Khẩu
+  async loadProfileAccountTab() {
+    const tabContent = document.getElementById('profile-tab-content');
+    if (!tabContent) return;
+
+    tabContent.innerHTML = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+        <!-- Thông tin cá nhân -->
+        <div class="glass-panel" style="padding: 24px;">
+          <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+            <i class="fa-solid fa-id-card" style="color: var(--neon-cyan);"></i> Cập Nhật Thông Tin Cá Nhân
+          </h3>
+          <form id="form-update-profile">
+            <div class="form-group">
+              <label class="form-label">Email đăng ký (Không thể thay đổi)</label>
+              <input type="email" class="form-control" value="${store.user.email}" disabled style="opacity: 0.7;">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Họ và tên *</label>
+              <input type="text" id="acc-name" class="form-control" value="${store.user.full_name}" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Số điện thoại</label>
+              <input type="tel" id="acc-phone" class="form-control" value="${store.user.phone || ''}" placeholder="0901234567">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+              <i class="fa-solid fa-check"></i> Lưu Thay Đổi
+            </button>
+          </form>
+        </div>
+
+        <!-- Đổi mật khẩu -->
+        <div class="glass-panel" style="padding: 24px;">
+          <h3 style="font-size: 1.15rem; margin-bottom: 16px;">
+            <i class="fa-solid fa-key" style="color: var(--neon-orange);"></i> Đổi Mật Khẩu
+          </h3>
+          <form id="form-change-pwd">
+            <div class="form-group">
+              <label class="form-label">Mật khẩu hiện tại *</label>
+              <input type="password" id="acc-old-pwd" class="form-control" placeholder="••••••••" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mật khẩu mới * (Tối thiểu 6 ký tự)</label>
+              <input type="password" id="acc-new-pwd" class="form-control" placeholder="••••••••" required minlength="6">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Xác nhận mật khẩu mới *</label>
+              <input type="password" id="acc-confirm-pwd" class="form-control" placeholder="••••••••" required minlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px; background: var(--grad-primary);">
+              <i class="fa-solid fa-shield"></i> Cập Nhật Mật Khẩu
+            </button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    // Submit cập nhật thông tin
+    document.getElementById('form-update-profile').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('acc-name').value.trim();
+      const phone = document.getElementById('acc-phone').value.trim();
+      try {
+        const res = await api.updateProfile({ full_name: name, phone });
+        store.setUser(res.data, localStorage.getItem('sports_auth_token'));
+        showToast('Đã cập nhật thông tin cá nhân thành công!', 'success');
+        this.renderProfile();
+      } catch (uErr) {
+        showToast(uErr.message, 'error');
+      }
+    });
+
+    // Submit đổi mật khẩu
+    document.getElementById('form-change-pwd').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const oldPwd = document.getElementById('acc-old-pwd').value;
+      const newPwd = document.getElementById('acc-new-pwd').value;
+      const confirmPwd = document.getElementById('acc-confirm-pwd').value;
+
+      if (newPwd !== confirmPwd) {
+        showToast('Mật khẩu mới xác nhận không khớp!', 'error');
+        return;
+      }
+
+      try {
+        const res = await api.changePassword(oldPwd, newPwd);
+        showToast(res.message, 'success');
+        document.getElementById('acc-old-pwd').value = '';
+        document.getElementById('acc-new-pwd').value = '';
+        document.getElementById('acc-confirm-pwd').value = '';
+      } catch (pErr) {
+        showToast(pErr.message, 'error');
       }
     });
   }
