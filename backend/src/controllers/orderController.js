@@ -15,6 +15,7 @@ const generateOrderCode = () => {
 const createOrder = async (req, res, next) => {
   try {
     const userId = req.user ? req.user.id : null;
+    const sessionId = req.headers['x-session-id'] || req.body.session_id;
     const {
       receiver_name,
       receiver_phone,
@@ -267,11 +268,14 @@ const createOrder = async (req, res, next) => {
       }
 
       // 8. Dọn sạch giỏ hàng của user/session sau khi đặt thành công
+      let targetCart = null;
       if (userId) {
-        const cart = await get('SELECT id FROM carts WHERE user_id = ?', [userId]);
-        if (cart) {
-          await run('DELETE FROM cart_items WHERE cart_id = ?', [cart.id]);
-        }
+        targetCart = await get('SELECT id FROM carts WHERE user_id = ?', [userId]);
+      } else if (sessionId) {
+        targetCart = await get('SELECT id FROM carts WHERE session_id = ? ORDER BY updated_at DESC LIMIT 1', [sessionId]);
+      }
+      if (targetCart) {
+        await run('DELETE FROM cart_items WHERE cart_id = ?', [targetCart.id]);
       }
 
       return {

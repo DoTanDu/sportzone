@@ -1,22 +1,72 @@
 const { query, get, run } = require('../config/db');
 
-// Helper tìm hoặc tạo giỏ hàng theo user_id hoặc session_id
+// Helper tìm hoặc tạo giỏ hàng theo user_id hoặc session_id kèm tự động Merge và bảo lưu khi Đăng xuất
 const getOrCreateCart = async (userId, sessionId) => {
   let cart = null;
+
   if (userId) {
-    cart = await get('SELECT id FROM carts WHERE user_id = ?', [userId]);
-  } else if (sessionId) {
-    cart = await get('SELECT id FROM carts WHERE session_id = ?', [sessionId]);
+    // 1. Tìm giỏ hàng theo user_id
+    cart = await get('SELECT id FROM carts WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
+
+    if (!cart) {
+      // Nếu chưa có giỏ theo user, kiểm tra xem session hiện tại có giỏ không để nâng cấp
+      if (sessionId) {
+        cart = await get('SELECT id FROM carts WHERE session_id = ? AND user_id IS NULL ORDER BY id DESC LIMIT 1', [sessionId]);
+        if (cart) {
+          await run('UPDATE carts SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [userId, cart.id]);
+        }
+      }
+      if (!cart) {
+        const result = await run(
+          'INSERT INTO carts (user_id, session_id) VALUES (?, ?)',
+          [userId, sessionId || null]
+        );
+        return result.id;
+      }
+    } else {
+      // Giỏ của user đã có.
+      if (sessionId) {
+        // Cập nhật session_id cho giỏ của user để khi đăng xuất trên trình duyệt này vẫn bảo lưu giỏ hàng
+        await run('UPDATE carts SET session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sessionId, cart.id]);
+
+        // Nếu trước đó có 1 giỏ vãng lai khác trùng session_id (khách thêm đồ trước khi đăng nhập)
+        const guestCart = await get('SELECT id FROM carts WHERE session_id = ? AND id != ? ORDER BY id DESC LIMIT 1', [sessionId, cart.id]);
+        if (guestCart) {
+          const guestItems = await query('SELECT product_variant_id, quantity FROM cart_items WHERE cart_id = ?', [guestCart.id]);
+          for (const item of guestItems) {
+            const existing = await get('SELECT id, quantity FROM cart_items WHERE cart_id = ? AND product_variant_id = ?', [cart.id, item.product_variant_id]);
+            if (existing) {
+              await run('UPDATE cart_items SET quantity = quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [item.quantity, existing.id]);
+            } else {
+              await run('INSERT INTO cart_items (cart_id, product_variant_id, quantity) VALUES (?, ?, ?)', [cart.id, item.product_variant_id, item.quantity]);
+            }
+          }
+          // Xóa giỏ vãng lai sau khi gộp xong
+          await run('DELETE FROM cart_items WHERE cart_id = ?', [guestCart.id]);
+          await run('DELETE FROM carts WHERE id = ?', [guestCart.id]);
+        }
+      }
+    }
+    return cart.id;
   }
 
-  if (!cart) {
-    const result = await run(
-      'INSERT INTO carts (user_id, session_id) VALUES (?, ?)',
-      [userId || null, sessionId || null]
-    );
-    return result.id;
+  // 2. Trường hợp Khách vãng lai (hoặc vừa ĐĂNG XUẤT ra):
+  if (sessionId) {
+    // Tìm giỏ hàng theo session_id (ưu tiên giỏ gần nhất vừa thao tác)
+    cart = await get('SELECT id FROM carts WHERE session_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1', [sessionId]);
+
+    if (!cart) {
+      const result = await run(
+        'INSERT INTO carts (user_id, session_id) VALUES (NULL, ?)',
+        [sessionId]
+      );
+      return result.id;
+    }
+    return cart.id;
   }
-  return cart.id;
+
+  const result = await run('INSERT INTO carts (user_id, session_id) VALUES (NULL, NULL)');
+  return result.id;
 };
 
 // Lấy thông tin chi tiết giỏ hàng

@@ -47,6 +47,15 @@ const store = {
     }
     this.updateUserUI();
     this.updateWishlistBadge();
+
+    // Tự động đồng bộ và nạp lại giỏ hàng (bảo lưu hàng trong giỏ khi đăng nhập hoặc đăng xuất)
+    if (window.api && typeof window.api.getCart === 'function') {
+      window.api.getCart().then(res => {
+        if (res && res.data) {
+          this.setCart(res.data);
+        }
+      }).catch(() => {});
+    }
   },
 
   logout() {
