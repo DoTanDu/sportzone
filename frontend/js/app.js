@@ -953,8 +953,14 @@ const app = {
         }
       });
 
-      // Nút chuyển sang form thanh toán
+      // Nút chuyển sang form thanh toán (Bắt buộc đăng nhập tài khoản)
       document.getElementById('btn-proceed-checkout').addEventListener('click', () => {
+        if (!store.user) {
+          showToast('Vui lòng đăng nhập tài khoản để tiến hành thanh toán đơn hàng!', 'warning');
+          this.closeCartDrawer();
+          this.openAuthModal('login');
+          return;
+        }
         this.renderCartDrawerContent(true);
       });
 
@@ -1011,6 +1017,13 @@ const app = {
 
       btnSubmitOrder.addEventListener('click', async () => {
         if (isSubmitting) return;
+
+        if (!store.user) {
+          showToast('Vui lòng đăng nhập tài khoản để tiến hành thanh toán đơn hàng!', 'warning');
+          this.closeCartDrawer();
+          this.openAuthModal('login');
+          return;
+        }
 
         const name = document.getElementById('order-name').value.trim();
         const phone = document.getElementById('order-phone').value.trim();
@@ -1508,6 +1521,13 @@ const app = {
         showToast(`Xin chào ${res.data.user.full_name}!`, 'success');
         modal.classList.remove('active');
         if (window.location.hash === '#profile') this.renderProfile();
+
+        // Nếu giỏ hàng có đồ, tự động mở lại giỏ để người dùng bấm Thanh Toán liền
+        if (store.cart && store.cart.total_items > 0) {
+          setTimeout(() => {
+            this.openCartDrawer();
+          }, 350);
+        }
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -1539,6 +1559,13 @@ const app = {
         showToast('Đăng ký tài khoản thành công! Chào mừng bạn đến với SportZone.', 'success');
         modal.classList.remove('active');
         if (window.location.hash === '#profile') this.renderProfile();
+
+        // Nếu giỏ hàng có đồ, tự động mở lại giỏ để người dùng bấm Thanh Toán liền
+        if (store.cart && store.cart.total_items > 0) {
+          setTimeout(() => {
+            this.openCartDrawer();
+          }, 350);
+        }
       } catch (err) {
         showToast(err.message, 'error');
       }

@@ -26,6 +26,14 @@ const createOrder = async (req, res, next) => {
       note = ''
     } = req.body;
 
+    // Bắt buộc người dùng phải đăng nhập tài khoản mới được thanh toán
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Vui lòng đăng nhập tài khoản trước khi tiến hành thanh toán đơn hàng.'
+      });
+    }
+
     // Chống double-click tạo 2 đơn trùng lặp
     const idempotencyKey = `${userId || req.headers['x-session-id'] || receiver_phone}_${JSON.stringify(items || [])}`;
     const now = Date.now();

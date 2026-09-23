@@ -44,7 +44,7 @@ router.delete('/cart/items/:id', cartController.removeCartItem);
 router.post('/coupons/validate', couponController.validateCoupon);
 
 // 6. Đơn đặt hàng
-router.post('/orders', optionalAuth, orderController.createOrder);
+router.post('/orders', authenticateToken, orderController.createOrder);
 router.get('/orders/track/:code', orderController.getOrderTracking);
 router.get('/orders/my-orders', authenticateToken, orderController.getUserOrders);
 router.put('/orders/:code/cancel', authenticateToken, orderController.cancelUserOrder);
