@@ -40,27 +40,43 @@ const store = {
     if (user && token) {
       localStorage.setItem('sports_user', JSON.stringify(user));
       localStorage.setItem('sports_auth_token', token);
+      this.updateUserUI();
+      this.updateWishlistBadge();
+
+      // Nạp giỏ hàng của tài khoản người dùng khi đăng nhập
+      if (typeof api !== 'undefined' && typeof api.getCart === 'function') {
+        api.getCart().then(res => {
+          if (res && res.data) {
+            this.setCart(res.data);
+          }
+        }).catch(() => {});
+      }
     } else {
       localStorage.removeItem('sports_user');
       localStorage.removeItem('sports_auth_token');
       this.wishlistIds = [];
-    }
-    this.updateUserUI();
-    this.updateWishlistBadge();
 
-    // Tự động đồng bộ và nạp lại giỏ hàng (bảo lưu hàng trong giỏ khi đăng nhập hoặc đăng xuất)
-    if (window.api && typeof window.api.getCart === 'function') {
-      window.api.getCart().then(res => {
-        if (res && res.data) {
-          this.setCart(res.data);
-        }
-      }).catch(() => {});
+      // Khởi tạo một Session ID mới cho phiên khách vãng lai
+      if (typeof resetSessionId === 'function') {
+        resetSessionId();
+      } else {
+        localStorage.setItem('sports_session_id', 'guest_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now());
+      }
+
+      // Xóa sạch giỏ hàng khi người dùng bấm Đăng xuất
+      this.setCart({ items: [], subtotal: 0, total_items: 0 });
+      this.updateUserUI();
+      this.updateWishlistBadge();
     }
   },
 
   logout() {
     this.setUser(null, null);
     showToast('Đã đăng xuất tài khoản thành công.', 'info');
+    // Đóng drawer giỏ hàng nếu đang mở
+    if (typeof app !== 'undefined' && typeof app.closeCartDrawer === 'function') {
+      app.closeCartDrawer();
+    }
     // Nếu đang ở trang admin hoặc profile, quay về trang chủ
     if (window.location.hash.startsWith('#admin') || window.location.hash.startsWith('#profile')) {
       window.location.hash = '#home';
@@ -70,6 +86,11 @@ const store = {
   setCart(cartData) {
     this.cart = cartData || { items: [], subtotal: 0, total_items: 0 };
     this.updateCartBadge();
+    // Tự động làm mới nội dung drawer giỏ hàng nếu đang mở
+    const overlay = document.getElementById('cart-drawer-overlay');
+    if (overlay && overlay.classList.contains('active') && typeof app !== 'undefined' && typeof app.renderCartDrawerContent === 'function') {
+      app.renderCartDrawerContent();
+    }
   },
 
   updateCartBadge() {

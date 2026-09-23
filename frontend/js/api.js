@@ -15,6 +15,13 @@ const getSessionId = () => {
   return sessionId;
 };
 
+// Khởi tạo mới session ID khi người dùng đăng xuất
+const resetSessionId = () => {
+  const sessionId = 'guest_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now();
+  localStorage.setItem('sports_session_id', sessionId);
+  return sessionId;
+};
+
 // Hàm gọi API cốt lõi
 async function fetchApi(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -58,6 +65,7 @@ const api = {
   getBrands: () => fetchApi('/brands'),
 
   // Giỏ hàng
+  resetSessionId: () => resetSessionId(),
   getCart: () => fetchApi('/cart'),
   addToCart: (variantId, quantity = 1) => 
     fetchApi('/cart/items', {

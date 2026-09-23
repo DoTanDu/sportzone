@@ -1,6 +1,6 @@
 const { query, get, run } = require('../config/db');
 
-// Helper tìm hoặc tạo giỏ hàng theo user_id hoặc session_id kèm tự động Merge và bảo lưu khi Đăng xuất
+// Helper tìm hoặc tạo giỏ hàng theo user_id hoặc session_id kèm tự động Merge khi đăng nhập
 const getOrCreateCart = async (userId, sessionId) => {
   let cart = null;
 
@@ -9,7 +9,7 @@ const getOrCreateCart = async (userId, sessionId) => {
     cart = await get('SELECT id FROM carts WHERE user_id = ? ORDER BY id DESC LIMIT 1', [userId]);
 
     if (!cart) {
-      // Nếu chưa có giỏ theo user, kiểm tra xem session hiện tại có giỏ không để nâng cấp
+      // Nếu chưa có giỏ theo user, kiểm tra xem session vãng lai hiện tại có giỏ không để chuyển cho user
       if (sessionId) {
         cart = await get('SELECT id FROM carts WHERE session_id = ? AND user_id IS NULL ORDER BY id DESC LIMIT 1', [sessionId]);
         if (cart) {
@@ -24,13 +24,10 @@ const getOrCreateCart = async (userId, sessionId) => {
         return result.id;
       }
     } else {
-      // Giỏ của user đã có.
+      // Giỏ của user đã có trong hệ thống.
       if (sessionId) {
-        // Cập nhật session_id cho giỏ của user để khi đăng xuất trên trình duyệt này vẫn bảo lưu giỏ hàng
-        await run('UPDATE carts SET session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [sessionId, cart.id]);
-
-        // Nếu trước đó có 1 giỏ vãng lai khác trùng session_id (khách thêm đồ trước khi đăng nhập)
-        const guestCart = await get('SELECT id FROM carts WHERE session_id = ? AND id != ? ORDER BY id DESC LIMIT 1', [sessionId, cart.id]);
+        // Nếu trước khi đăng nhập, khách có nhặt đồ vào giỏ vãng lai, gộp vào giỏ của user
+        const guestCart = await get('SELECT id FROM carts WHERE session_id = ? AND user_id IS NULL AND id != ? ORDER BY id DESC LIMIT 1', [sessionId, cart.id]);
         if (guestCart) {
           const guestItems = await query('SELECT product_variant_id, quantity FROM cart_items WHERE cart_id = ?', [guestCart.id]);
           for (const item of guestItems) {
@@ -50,10 +47,10 @@ const getOrCreateCart = async (userId, sessionId) => {
     return cart.id;
   }
 
-  // 2. Trường hợp Khách vãng lai (hoặc vừa ĐĂNG XUẤT ra):
+  // 2. Trường hợp Khách vãng lai (Chưa đăng nhập hoặc vừa ĐĂNG XUẤT ra):
+  // Chỉ tìm giỏ hàng vãng lai (BẮT BUỘC user_id IS NULL). Tuyệt đối KHÔNG gán giỏ của tài khoản cho khách vãng lai!
   if (sessionId) {
-    // Tìm giỏ hàng theo session_id (ưu tiên giỏ gần nhất vừa thao tác)
-    cart = await get('SELECT id FROM carts WHERE session_id = ? ORDER BY updated_at DESC, id DESC LIMIT 1', [sessionId]);
+    cart = await get('SELECT id FROM carts WHERE session_id = ? AND user_id IS NULL ORDER BY updated_at DESC, id DESC LIMIT 1', [sessionId]);
 
     if (!cart) {
       const result = await run(
