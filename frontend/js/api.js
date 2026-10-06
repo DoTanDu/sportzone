@@ -103,6 +103,15 @@ const api = {
       method: 'PUT',
       body: JSON.stringify({ reason })
     }),
+  getOrderPaymentStatus: (code) =>
+    fetchApi(`/orders/${encodeURIComponent(code)}/payment-status`),
+  confirmOrderPayment: (code, data = {}) =>
+    fetchApi(`/orders/${encodeURIComponent(code)}/confirm-payment`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  getPaymentConfig: () =>
+    fetchApi('/payment/config'),
 
   // Người dùng & Xác thực
   login: (identifier, password) =>

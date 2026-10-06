@@ -1139,6 +1139,13 @@ const admin = {
             <div style="font-size: 0.88rem; line-height: 1.6;">
               <div>Phương thức: <strong>${o.payment_method === 'banking' ? 'Chuyển khoản VietQR' : (o.payment_method === 'momo' ? 'Ví điện tử MoMo' : 'Thanh toán COD khi nhận hàng')}</strong></div>
               <div>Trạng thái: <span class="badge ${o.payment_status === 'paid' ? 'badge-stock' : 'badge-low-stock'}">${o.payment_status === 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}</span></div>
+              ${o.payment_status !== 'paid' ? `
+                <div style="margin-top: 8px;">
+                  <button type="button" class="btn btn-sm btn-cyan" id="btn-admin-confirm-paid" style="font-size: 0.78rem; padding: 4px 10px;">
+                    <i class="fa-solid fa-check"></i> Xác Nhận Đã Nhận Tiền
+                  </button>
+                </div>
+              ` : ''}
               ${o.cancel_reason ? `<div style="margin-top: 6px; color: var(--neon-red);"><i class="fa-solid fa-ban"></i> Lý do hủy: ${o.cancel_reason}</div>` : ''}
             </div>
           </div>
@@ -1201,6 +1208,25 @@ const admin = {
           <button type="button" class="btn btn-outline" id="btn-close-order-detail-modal">Đóng</button>
         </div>
       `;
+
+      const btnAdminMarkPaid = document.getElementById('btn-admin-confirm-paid');
+      if (btnAdminMarkPaid) {
+        btnAdminMarkPaid.addEventListener('click', async () => {
+          if (!confirm(`Xác nhận đã nhận đủ tiền chuyển khoản cho đơn hàng ${o.order_code}?`)) return;
+          try {
+            btnAdminMarkPaid.disabled = true;
+            btnAdminMarkPaid.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang cập nhật...';
+            await api.confirmOrderPayment(o.order_code, { note: 'Quản trị viên đối soát ngân hàng và xác nhận đã nhận tiền' });
+            showToast('Đã xác nhận thanh toán đơn hàng thành công!', 'success');
+            modal.classList.remove('active');
+            this.loadOrdersTab();
+          } catch (err) {
+            btnAdminMarkPaid.disabled = false;
+            btnAdminMarkPaid.innerHTML = '<i class="fa-solid fa-check"></i> Xác Nhận Đã Nhận Tiền';
+            showToast('Lỗi: ' + err.message, 'error');
+          }
+        });
+      }
 
       document.getElementById('btn-close-order-detail-modal').addEventListener('click', () => {
         modal.classList.remove('active');

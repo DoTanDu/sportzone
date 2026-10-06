@@ -1632,3 +1632,341 @@
   color: #fff;
 }
 
+/* ==========================================================
+   DYNAMIC PAYMENT EXPERIENCE (VIETQR & MOMO CHUẨN TMĐT)
+   ========================================================== */
+
+/* Thẻ thanh toán động hiện đại */
+.dynamic-checkout-card {
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(8, 12, 22, 0.98));
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 25px rgba(0, 240, 255, 0.12);
+  margin: 16px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.dynamic-checkout-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #00f0ff, #7928ca, #00f0ff);
+  background-size: 200% 100%;
+  animation: gradientFlow 3s linear infinite;
+}
+
+@keyframes gradientFlow {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+/* Hộp đếm ngược thời gian thanh toán */
+.payment-countdown-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: #fff;
+  margin-bottom: 16px;
+}
+
+.payment-countdown-box.warning {
+  background: rgba(255, 51, 102, 0.12);
+  border-color: rgba(255, 51, 102, 0.4);
+  color: #ff3366;
+  animation: pulseWarning 1s infinite alternate;
+}
+
+@keyframes pulseWarning {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.03); }
+}
+
+.countdown-digits {
+  font-family: 'Courier New', monospace;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  letter-spacing: 1px;
+}
+
+.payment-countdown-box.warning .countdown-digits {
+  color: #ff3366;
+}
+
+/* Khung chứa ảnh QR với hiệu ứng quét Laser */
+.qr-scanner-box {
+  position: relative;
+  display: inline-block;
+  margin: 10px auto;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  max-width: 270px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.qr-scanner-box img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* Tia Laser chạy quét mã QR */
+.qr-scanner-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #00f0ff, #fff, #00f0ff, transparent);
+  box-shadow: 0 0 10px #00f0ff, 0 0 16px #00f0ff;
+  animation: laserScan 2.6s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes laserScan {
+  0% { top: 4%; opacity: 0.3; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { top: 94%; opacity: 0.3; }
+}
+
+/* Nút tải mã QR về thiết bị */
+.btn-download-qr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-download-qr:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  transform: translateY(-1px);
+}
+
+/* Danh sách chi tiết chuyển khoản */
+.payment-details-table {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+  margin: 16px 0;
+  text-align: left;
+}
+
+.payment-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.payment-detail-row:last-child {
+  border-bottom: none;
+}
+
+.payment-detail-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payment-detail-val {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-copy-mini {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: var(--neon-cyan);
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-copy-mini:hover {
+  background: var(--neon-cyan);
+  color: #000;
+}
+
+.btn-copy-mini.copied {
+  background: var(--neon-green);
+  border-color: var(--neon-green);
+  color: #000;
+}
+
+/* Thông báo lưu ý chuyển khoản */
+.payment-memo-notice {
+  background: rgba(255, 183, 3, 0.08);
+  border-left: 3px solid #ffb703;
+  padding: 8px 12px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.78rem;
+  color: #ffdd80;
+  text-align: left;
+  margin-top: 10px;
+}
+
+/* Trạng thái Polling radar */
+.payment-polling-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  margin-top: 16px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.polling-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--neon-cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--neon-cyan);
+  animation: pulseDot 1.4s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.8); opacity: 0.4; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0.4; }
+}
+
+/* Nút hành động thanh toán */
+.payment-actions-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn-simulate-pay {
+  background: rgba(0, 240, 255, 0.12);
+  border: 1px dashed var(--neon-cyan);
+  color: var(--neon-cyan);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-simulate-pay:hover {
+  background: var(--neon-cyan);
+  color: #000;
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+}
+
+/* Màn hình ăn mừng thanh toán thành công */
+.payment-success-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 78, 59, 0.2));
+  border: 2px solid var(--neon-green);
+  border-radius: var(--radius-lg);
+  padding: 30px 20px;
+  text-align: center;
+  box-shadow: 0 0 35px rgba(16, 185, 129, 0.25);
+  animation: celebrateFadeIn 0.5s ease-out;
+}
+
+@keyframes celebrateFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.success-check-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid var(--neon-green);
+  color: var(--neon-green);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  margin-bottom: 16px;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+/* Lớp phủ khi mã QR hết hạn */
+.qr-expired-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(5px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  color: #fff;
+  z-index: 10;
+  animation: celebrateFadeIn 0.3s ease-out;
+}
+
+.qr-expired-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 51, 102, 0.18);
+  border: 1px solid var(--neon-red);
+  color: var(--neon-red);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  margin-bottom: 8px;
+  box-shadow: 0 0 15px rgba(255, 51, 102, 0.3);
+}
+
+

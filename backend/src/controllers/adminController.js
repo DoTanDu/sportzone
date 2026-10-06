@@ -92,26 +92,27 @@ const getAdminOrders = async (req, res, next) => {
 const updateOrderStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { order_status, note = '' } = req.body;
+    const { order_status, note = '', payment_status } = req.body;
 
     const validStatuses = ['pending', 'confirmed', 'processing', 'shipping', 'delivered', 'cancelled', 'returned'];
-    if (!validStatuses.includes(order_status)) {
+    if (order_status && !validStatuses.includes(order_status)) {
       return res.status(400).json({
         success: false,
         message: 'Trạng thái đơn hàng không hợp lệ.'
       });
     }
 
-    const order = await get('SELECT id, order_code, order_status FROM orders WHERE id = ?', [id]);
+    const order = await get('SELECT id, order_code, order_status, payment_status FROM orders WHERE id = ?', [id]);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy đơn hàng này.' });
     }
 
+    const targetOrderStatus = order_status || order.order_status;
     const oldStatus = order.order_status;
     const adminName = req.user ? req.user.full_name : 'Quản trị viên';
 
     // Nếu đơn chuyển sang 'cancelled' hoặc 'returned' mà trước đó chưa hủy/trả -> Hoàn kho
-    if (['cancelled', 'returned'].includes(order_status) && !['cancelled', 'returned'].includes(oldStatus)) {
+    if (['cancelled', 'returned'].includes(targetOrderStatus) && !['cancelled', 'returned'].includes(oldStatus)) {
       const items = await query(
         'SELECT product_variant_id, quantity FROM order_items WHERE order_id = ?',
         [id]
@@ -142,7 +143,7 @@ const updateOrderStatus = async (req, res, next) => {
                 variant.stock_quantity,
                 variant.stock_quantity + item.quantity,
                 order.order_code,
-                `Hoàn kho khi đổi trạng thái đơn sang ${order_status}`,
+                `Hoàn kho khi đổi trạng thái đơn sang ${targetOrderStatus}`,
                 adminName
               ]
             );
@@ -151,21 +152,35 @@ const updateOrderStatus = async (req, res, next) => {
       }
     }
 
-    // Cập nhật trạng thái
-    await run(
-      'UPDATE orders SET order_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [order_status, id]
-    );
+    // Cập nhật trạng thái đơn và thanh toán
+    if (payment_status && ['unpaid', 'paid', 'refunded', 'failed'].includes(payment_status)) {
+      await run(
+        'UPDATE orders SET order_status = ?, payment_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [targetOrderStatus, payment_status, id]
+      );
+
+      if (payment_status === 'paid') {
+        await run(
+          'UPDATE payment_transactions SET status = "success" WHERE order_id = ?',
+          [id]
+        );
+      }
+    } else {
+      await run(
+        'UPDATE orders SET order_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [targetOrderStatus, id]
+      );
+    }
 
     // Ghi vào dòng thời gian (Timeline)
     await run(
       'INSERT INTO order_timeline (order_id, status, note, created_by) VALUES (?, ?, ?, ?)',
-      [id, order_status, note || `Cập nhật trạng thái sang: ${order_status}`, adminName]
+      [id, targetOrderStatus, note || `Cập nhật trạng thái: ${targetOrderStatus}${payment_status ? ` (Thanh toán: ${payment_status})` : ''}`, adminName]
     );
 
     res.json({
       success: true,
-      message: `Đã cập nhật đơn hàng ${order.order_code} sang trạng thái: ${order_status}`
+      message: `Đã cập nhật đơn hàng ${order.order_code} thành công!`
     });
   } catch (err) {
     next(err);

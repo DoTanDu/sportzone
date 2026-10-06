@@ -43,11 +43,14 @@ router.delete('/cart/items/:id', cartController.removeCartItem);
 // 5. Mã giảm giá (Coupons / Vouchers)
 router.post('/coupons/validate', couponController.validateCoupon);
 
-// 6. Đơn đặt hàng
+// 6. Đơn đặt hàng & Thanh toán QR
 router.post('/orders', authenticateToken, orderController.createOrder);
 router.get('/orders/track/:code', orderController.getOrderTracking);
 router.get('/orders/my-orders', authenticateToken, orderController.getUserOrders);
 router.put('/orders/:code/cancel', authenticateToken, orderController.cancelUserOrder);
+router.get('/orders/:code/payment-status', orderController.getOrderPaymentStatus);
+router.post('/orders/:code/confirm-payment', optionalAuth, orderController.confirmOrderPayment);
+router.get('/payment/config', orderController.getPublicPaymentInfo);
 
 // 7. Xác thực & Quản lý thông tin cá nhân
 router.post('/auth/register', authController.register);

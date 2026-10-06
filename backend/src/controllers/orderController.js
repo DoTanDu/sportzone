@@ -1,5 +1,6 @@
 const { get, query, run, transaction } = require('../config/db');
 const { getPagination, formatPaginationResponse } = require('../utils/pagination');
+const { paymentConfig, generateVietQRUrl, generateMomoQRUrl, getPublicPaymentConfig } = require('../config/paymentConfig');
 
 // Bộ đệm chống spam / double-click đặt trùng đơn
 const recentOrdersCache = new Map();
@@ -239,16 +240,17 @@ const createOrder = async (req, res, next) => {
         [orderId]
       );
 
-      // 7. Tạo mã QR thanh toán động (VietQR hoặc MoMo)
+      // 7. Tạo mã QR thanh toán động chuẩn TMĐT (VietQR hoặc MoMo)
       let vietQrUrl = null;
       let momoQrUrl = null;
       let momoPayload = null;
 
       if (payment_method === 'banking') {
-        const bankAccount = '19072002464014';
-        const bankName = 'TCB'; // Ngân hàng Techcombank
-        const accountHolder = 'Sportzone';
-        vietQrUrl = 'assets/images/qr_vietqr.png';
+        vietQrUrl = generateVietQRUrl({
+          amount: totalAmount,
+          orderCode,
+          accountName: paymentConfig.vietqr.accountName
+        });
 
         await run(
           `INSERT INTO payment_transactions (order_id, gateway, transaction_code, amount, status, payment_url)
@@ -256,12 +258,13 @@ const createOrder = async (req, res, next) => {
           [orderId, orderCode, totalAmount, vietQrUrl]
         );
       } else if (payment_method === 'momo') {
-        const momoPhone = '0987654321';
-        const momoReceiver = 'Sportzone';
-        momoQrUrl = 'assets/images/qr_momo.png';
+        momoQrUrl = generateMomoQRUrl({
+          amount: totalAmount,
+          orderCode
+        });
         momoPayload = {
-          phone: momoPhone,
-          receiver: momoReceiver,
+          phone: paymentConfig.momo.phone,
+          receiver: paymentConfig.momo.accountName,
           amount: totalAmount,
           order_code: orderCode,
           qr_url: momoQrUrl,
@@ -295,9 +298,11 @@ const createOrder = async (req, res, next) => {
         discount_amount: discountAmount,
         items_count: verifiedItems.length,
         payment_method,
+        payment_status: 'unpaid',
         vietqr_url: vietQrUrl,
         momo_qr_url: momoQrUrl,
-        momo_payload: momoPayload
+        momo_payload: momoPayload,
+        payment_config: getPublicPaymentConfig()
       };
     });
 
@@ -347,13 +352,31 @@ const getOrderTracking = async (req, res, next) => {
       [order.id]
     );
 
+    let dynamicVietQr = null;
+    let dynamicMomoQr = null;
+    if (order.payment_method === 'banking') {
+      dynamicVietQr = generateVietQRUrl({
+        amount: order.total_amount,
+        orderCode: order.order_code,
+        accountName: paymentConfig.vietqr.accountName
+      });
+    } else if (order.payment_method === 'momo') {
+      dynamicMomoQr = generateMomoQRUrl({
+        amount: order.total_amount,
+        orderCode: order.order_code
+      });
+    }
+
     res.json({
       success: true,
       data: {
         ...order,
         items,
         timeline,
-        payment_transaction: transaction
+        payment_transaction: transaction,
+        vietqr_url: dynamicVietQr,
+        momo_qr_url: dynamicMomoQr,
+        payment_config: getPublicPaymentConfig()
       }
     });
   } catch (err) {
@@ -492,9 +515,128 @@ const cancelUserOrder = async (req, res, next) => {
   }
 };
 
+// Lấy nhanh trạng thái thanh toán phục vụ Polling thời gian thực ở Frontend
+const getOrderPaymentStatus = async (req, res, next) => {
+  try {
+    const { code } = req.params;
+    const order = await get(
+      `SELECT id, order_code, payment_status, order_status, total_amount, payment_method, updated_at
+       FROM orders WHERE order_code = ?`,
+      [code.trim()]
+    );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: `Không tìm thấy đơn hàng "${code}".`
+      });
+    }
+
+    const transaction = await get(
+      `SELECT id, gateway, amount, status, created_at
+       FROM payment_transactions WHERE order_id = ? ORDER BY id DESC LIMIT 1`,
+      [order.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        order_code: order.order_code,
+        payment_status: order.payment_status,
+        order_status: order.order_status,
+        total_amount: order.total_amount,
+        payment_method: order.payment_method,
+        is_paid: order.payment_status === 'paid',
+        transaction_status: transaction ? transaction.status : null,
+        last_updated: order.updated_at
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Xác nhận thanh toán thành công (Webhook / Nút kiểm tra / Demo)
+const confirmOrderPayment = async (req, res, next) => {
+  try {
+    const { code } = req.params;
+    const { note } = req.body || {};
+
+    const order = await get('SELECT * FROM orders WHERE order_code = ?', [code.trim()]);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: `Không tìm thấy đơn hàng "${code}".`
+      });
+    }
+
+    if (order.payment_status === 'paid') {
+      return res.json({
+        success: true,
+        message: 'Đơn hàng này đã được ghi nhận thanh toán thành công.',
+        data: {
+          order_code: order.order_code,
+          payment_status: 'paid',
+          order_status: order.order_status
+        }
+      });
+    }
+
+    const newOrderStatus = order.order_status === 'pending' ? 'confirmed' : order.order_status;
+    const author = req.user ? req.user.full_name : 'Hệ thống đối soát VietQR';
+    const logNote = note || `Thanh toán thành công qua ${order.payment_method === 'banking' ? 'VietQR Napas247' : 'Ví MoMo'}`;
+
+    await run(
+      `UPDATE orders 
+       SET payment_status = 'paid', 
+           order_status = ?, 
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [newOrderStatus, order.id]
+    );
+
+    await run(
+      `UPDATE payment_transactions 
+       SET status = 'success' 
+       WHERE order_id = ?`,
+      [order.id]
+    );
+
+    await run(
+      `INSERT INTO order_timeline (order_id, status, note, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [order.id, newOrderStatus, logNote, author]
+    );
+
+    res.json({
+      success: true,
+      message: `Xác nhận thanh toán đơn hàng ${order.order_code} thành công!`,
+      data: {
+        order_code: order.order_code,
+        payment_status: 'paid',
+        order_status: newOrderStatus
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Lấy thông tin tài khoản ngân hàng cấu hình hiển thị
+const getPublicPaymentInfo = (req, res) => {
+  res.json({
+    success: true,
+    data: getPublicPaymentConfig()
+  });
+};
+
 module.exports = {
   createOrder,
   getOrderTracking,
   getUserOrders,
-  cancelUserOrder
+  cancelUserOrder,
+  getOrderPaymentStatus,
+  confirmOrderPayment,
+  getPublicPaymentInfo
 };
+

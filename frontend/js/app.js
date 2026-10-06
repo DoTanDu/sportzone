@@ -818,8 +818,462 @@ const app = {
   },
 
   closeCartDrawer() {
+    this.clearPaymentTimers();
     const overlay = document.getElementById('cart-drawer-overlay');
     if (overlay) overlay.classList.remove('active');
+  },
+
+  // Quản lý dọn dẹp các timer & polling ngầm
+  paymentTimerInterval: null,
+  paymentPollingInterval: null,
+  clearPaymentTimers() {
+    if (this.paymentTimerInterval) {
+      clearInterval(this.paymentTimerInterval);
+      this.paymentTimerInterval = null;
+    }
+    if (this.paymentPollingInterval) {
+      clearInterval(this.paymentPollingInterval);
+      this.paymentPollingInterval = null;
+    }
+  },
+
+  // Tải ảnh mã QR động về thiết bị
+  downloadQRCode(url, orderCode) {
+    try {
+      showToast('Đang chuẩn bị tải mã QR...', 'info');
+      fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error('Không thể tải ảnh trực tiếp');
+          return res.blob();
+        })
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `VietQR_${orderCode}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          showToast('Đã tải mã QR về thiết bị thành công!', 'success');
+        })
+        .catch(() => {
+          window.open(url, '_blank');
+          showToast('Đang mở ảnh QR trong tab mới để bạn lưu về máy...', 'info');
+        });
+    } catch (e) {
+      window.open(url, '_blank');
+    }
+  },
+
+  // Sao chép văn bản 1-chạm kèm hiệu ứng nút
+  copyPaymentText(text, btnElem, label = 'nội dung') {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(`Đã sao chép ${label}!`, 'info');
+      if (btnElem) {
+        const originalText = btnElem.innerHTML;
+        btnElem.innerHTML = '<i class="fa-solid fa-check"></i> Đã chép';
+        btnElem.classList.add('copied');
+        setTimeout(() => {
+          btnElem.innerHTML = originalText;
+          btnElem.classList.remove('copied');
+        }, 2000);
+      }
+    }).catch(() => {
+      showToast(`Vui lòng sao chép thủ công: ${text}`, 'warning');
+    });
+  },
+
+  // Xác nhận / Giả lập thanh toán tức thì (phù hợp kiểm thử & demo đồ án)
+  async handleConfirmPayment(orderCode, container) {
+    try {
+      showToast('Đang xác nhận giao dịch...', 'info');
+      const res = await api.confirmOrderPayment(orderCode, {
+        note: 'Xác nhận thanh toán trực tuyến qua mã QR động'
+      });
+      if (res.success) {
+        showToast('🎉 Đơn hàng đã được xác nhận thanh toán!', 'success');
+        this.clearPaymentTimers();
+        this.renderPaymentSuccessScreen(container, {
+          order_code: orderCode,
+          total_amount: res.data ? res.data.total_amount : null
+        });
+      }
+    } catch (err) {
+      showToast(err.message || 'Không thể xác nhận thanh toán!', 'error');
+    }
+  },
+
+  // Hiển thị màn hình ăn mừng thanh toán thành công
+  renderPaymentSuccessScreen(container, orderData) {
+    this.clearPaymentTimers();
+    container.innerHTML = `
+      <div class="payment-success-card">
+        <div class="success-check-icon">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+        <h2 style="font-size: 1.45rem; color: var(--neon-green); margin-bottom: 6px;">Thanh Toán Thành Công!</h2>
+        <p style="color: #cbd5e1; font-size: 0.88rem; margin-bottom: 14px;">Hệ thống đã tự động ghi nhận thanh toán cho đơn hàng của bạn.</p>
+        
+        <div style="background: rgba(0, 0, 0, 0.4); padding: 14px; border-radius: var(--radius-md); margin-bottom: 16px; border: 1px solid rgba(16, 185, 129, 0.3);">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">MÃ ĐƠN HÀNG:</div>
+          <strong style="font-size: 1.3rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${orderData.order_code}</strong>
+          <div style="display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 6px;">
+            <span class="badge badge-stock"><i class="fa-solid fa-check-double"></i> ĐÃ THANH TOÁN</span>
+            <span class="badge badge-hot"><i class="fa-solid fa-box"></i> ĐANG CHUẨN BỊ HÀNG</span>
+          </div>
+        </div>
+
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 18px;">
+          SportZone sẽ đóng gói và bàn giao cho đơn vị vận chuyển sớm nhất. Bạn có thể theo dõi tiến độ đơn hàng bất cứ lúc nào!
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <a href="#tracking?code=${orderData.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer();">
+            <i class="fa-solid fa-truck-fast"></i> Xem Chi Tiết Hành Trình Đơn
+          </a>
+          <a href="#shop" class="btn btn-outline btn-sm" onclick="app.closeCartDrawer();">
+            <i class="fa-solid fa-basket-shopping"></i> Tiếp Tục Mua Sắm
+          </a>
+        </div>
+      </div>
+    `;
+  },
+
+  // Hiển thị giao diện thanh toán động chuẩn các shop online hàng đầu
+  renderDynamicPaymentScreen(container, orderData) {
+    this.clearPaymentTimers();
+
+    const isBanking = orderData.payment_method === 'banking';
+    const isMomo = orderData.payment_method === 'momo';
+    const orderCode = orderData.order_code;
+    const amount = Number(orderData.total_amount || 0);
+
+    // Chuẩn bị thông tin ngân hàng & QR
+    const bankCfg = (orderData.payment_config && orderData.payment_config.vietqr) ? orderData.payment_config.vietqr : {
+      bankId: 'TCB',
+      bankName: 'Techcombank (Napas 247)',
+      accountNo: '19072002464014',
+      accountName: 'SPORTZONE',
+      template: 'compact2'
+    };
+
+    const momoCfg = (orderData.payment_config && orderData.payment_config.momo) ? orderData.payment_config.momo : {
+      phone: '0363332841',
+      accountName: 'Đỗ Tấn Du'
+    };
+
+    // Tạo mã VietQR động chính xác
+    const vietQrUrl = orderData.vietqr_url || `https://img.vietqr.io/image/${bankCfg.bankId}-${bankCfg.accountNo}-${bankCfg.template || 'compact2'}.png?amount=${Math.round(amount)}&addInfo=${encodeURIComponent(orderCode)}&accountName=${encodeURIComponent(bankCfg.accountName)}`;
+    
+    // Tạo mã MoMo QR động
+    const momoQrUrl = orderData.momo_qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(`2|99|${momoCfg.phone}|${momoCfg.accountName}||0|0|${Math.round(amount)}|${orderCode}|transfer_myqr`)}`;
+
+    const currentQrUrl = isBanking ? vietQrUrl : momoQrUrl;
+
+    container.innerHTML = `
+      <div class="dynamic-checkout-card">
+        <!-- Đồng hồ đếm ngược thanh toán -->
+        <div class="payment-countdown-box" id="pay-countdown-box">
+          <i class="fa-regular fa-clock" style="color: var(--neon-cyan);"></i>
+          <span>Thanh toán trong:</span>
+          <span class="countdown-digits" id="pay-countdown-digits">15:00</span>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+          <h3 style="font-size: 1.15rem; color: #fff; margin-bottom: 4px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-qrcode" style="color: var(--neon-cyan);"></i>
+            ${isBanking ? 'QUÉT MÃ VIETQR ĐỂ THANH TOÁN' : 'QUÉT MÃ MOMO QR ĐỂ THANH TOÁN'}
+          </h3>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 6px;">
+            ${isBanking ? 'Mở App Ngân hàng bất kỳ hoặc Ví MoMo, ZaloPay để quét mã QR bên dưới' : 'Mở App MoMo quét mã hoặc nhấn mở app trực tiếp'}
+          </p>
+          ${isBanking ? `
+            <div style="display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px;">
+              <span style="background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px;"><i class="fa-solid fa-building-columns" style="color: var(--neon-cyan);"></i> 50+ Ngân Hàng</span>
+              <span style="background: rgba(216,45,139,0.15); color: #f472b6; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(216,45,139,0.3);"><i class="fa-solid fa-wallet"></i> Ví MoMo</span>
+              <span style="background: rgba(0,136,255,0.15); color: #60a5fa; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(0,136,255,0.3);"><i class="fa-solid fa-bolt"></i> ZaloPay</span>
+              <span style="background: rgba(239,68,68,0.15); color: #f87171; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(239,68,68,0.3);"><i class="fa-solid fa-mobile-screen"></i> Viettel Money</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Khung quét mã QR kèm tia laser scan -->
+        <div class="qr-scanner-box">
+          <div class="qr-scanner-line"></div>
+          <img src="${currentQrUrl}" alt="Mã QR thanh toán đơn ${orderCode}" id="dynamic-qr-image" onerror="this.src='assets/images/${isBanking ? 'qr_vietqr.png' : 'qr_momo.png'}';">
+        </div>
+
+        <div>
+          <button type="button" class="btn-download-qr" onclick="app.downloadQRCode('${currentQrUrl}', '${orderCode}')">
+            <i class="fa-solid fa-download"></i> Tải Mã QR Về Máy
+          </button>
+        </div>
+
+        <!-- Bảng thông tin chuyển khoản chi tiết -->
+        <div class="payment-details-table">
+          ${isBanking ? `
+            <div class="payment-detail-row">
+              <span class="payment-detail-label"><i class="fa-solid fa-building-columns"></i> Ngân hàng</span>
+              <span class="payment-detail-val" style="color: var(--neon-cyan);"><strong>${(bankCfg.bankName || 'Techcombank').split('(')[0].trim()}</strong> (Napas 247)</span>
+            </div>
+            <div class="payment-detail-row">
+              <span class="payment-detail-label"><i class="fa-solid fa-credit-card"></i> Số tài khoản</span>
+              <div class="payment-detail-val">
+                <span style="letter-spacing: 0.5px;">${bankCfg.accountNo}</span>
+                <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${bankCfg.accountNo}', this, 'số tài khoản')">Sao chép</button>
+              </div>
+            </div>
+            <div class="payment-detail-row">
+              <span class="payment-detail-label"><i class="fa-solid fa-user-check"></i> Chủ tài khoản</span>
+              <div class="payment-detail-val">
+                <span>${bankCfg.accountName}</span>
+                <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${bankCfg.accountName}', this, 'chủ tài khoản')">Sao chép</button>
+              </div>
+            </div>
+          ` : `
+            <div class="payment-detail-row">
+              <span class="payment-detail-label"><i class="fa-solid fa-mobile-screen"></i> Số ví MoMo</span>
+              <div class="payment-detail-val">
+                <span>${momoCfg.phone}</span>
+                <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${momoCfg.phone}', this, 'số ví')">Sao chép</button>
+              </div>
+            </div>
+            <div class="payment-detail-row">
+              <span class="payment-detail-label"><i class="fa-solid fa-user-check"></i> Tên người nhận</span>
+              <div class="payment-detail-val">
+                <span>${momoCfg.accountName}</span>
+                <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${momoCfg.accountName}', this, 'tên người nhận')">Sao chép</button>
+              </div>
+            </div>
+          `}
+
+          <div class="payment-detail-row">
+            <span class="payment-detail-label"><i class="fa-solid fa-money-bill-wave"></i> Số tiền cần chuyển</span>
+            <div class="payment-detail-val">
+              <strong style="color: var(--neon-green); font-size: 1.05rem;">${formatVND(amount)}</strong>
+              <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${amount}', this, 'số tiền')">Sao chép</button>
+            </div>
+          </div>
+
+          <div class="payment-detail-row">
+            <span class="payment-detail-label"><i class="fa-solid fa-receipt"></i> Nội dung chuyển khoản</span>
+            <div class="payment-detail-val">
+              <strong style="color: var(--neon-cyan); letter-spacing: 0.5px;">${orderCode}</strong>
+              <button type="button" class="btn-copy-mini" onclick="app.copyPaymentText('${orderCode}', this, 'nội dung chuyển khoản')">Sao chép</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cảnh báo quan trọng -->
+        <div class="payment-memo-notice">
+          <i class="fa-solid fa-circle-exclamation" style="margin-right: 4px;"></i>
+          <strong>Lưu ý:</strong> Vui lòng điền <strong>chính xác mã đơn "${orderCode}"</strong> vào nội dung chuyển khoản để hệ thống tự động xác nhận đơn hàng ngay tức thì.
+        </div>
+
+        ${isMomo ? `
+          <a href="https://me.momo.vn/${momoCfg.phone}" target="_blank" rel="noopener noreferrer" class="btn-momo-app">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở Ví MoMo Chuyển Tiền (${momoCfg.phone} - ${momoCfg.accountName})
+          </a>
+        ` : ''}
+
+        <!-- Thanh thông báo trạng thái polling tự động -->
+        <div class="payment-polling-bar" id="pay-polling-bar">
+          <div class="polling-dot"></div>
+          <span id="pay-polling-text">Hệ thống đang tự động lắng nghe giao dịch chuyển khoản...</span>
+        </div>
+
+        <!-- Các nút thao tác -->
+        <div class="payment-actions-group">
+          <button type="button" class="btn btn-primary btn-sm" id="btn-manual-check-pay" style="width: 100%;">
+            <i class="fa-solid fa-rotate"></i> Tôi Đã Chuyển Khoản Xong
+          </button>
+
+          <button type="button" class="btn-simulate-pay" id="btn-simulate-pay">
+            <i class="fa-solid fa-bolt-lightning"></i> ⚡ Xác Nhận Thanh Toán Ngay (Demo / Kiểm thử)
+          </button>
+        </div>
+      </div>
+    `;
+
+    // 1. Khởi động bộ đếm ngược 15 phút (900 giây)
+    let remainingSeconds = 15 * 60;
+    const digitsElem = container.querySelector('#pay-countdown-digits');
+    const countdownBox = container.querySelector('#pay-countdown-box');
+
+    this.paymentTimerInterval = setInterval(() => {
+      remainingSeconds--;
+      if (remainingSeconds <= 0) {
+        clearInterval(this.paymentTimerInterval);
+        this.paymentTimerInterval = null;
+        if (this.paymentPollingInterval) {
+          clearInterval(this.paymentPollingInterval);
+          this.paymentPollingInterval = null;
+        }
+
+        if (digitsElem) digitsElem.textContent = '00:00';
+        if (countdownBox) {
+          countdownBox.classList.add('warning');
+          countdownBox.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> <span>Đã hết thời gian thanh toán</span>';
+        }
+
+        // Khóa mã QR với overlay cảnh báo hết hạn để tránh quét nhầm
+        const qrBox = container.querySelector('.qr-scanner-box');
+        if (qrBox && !qrBox.querySelector('.qr-expired-overlay')) {
+          const expiredOverlay = document.createElement('div');
+          expiredOverlay.className = 'qr-expired-overlay';
+          expiredOverlay.innerHTML = `
+            <div class="qr-expired-icon">
+              <i class="fa-solid fa-clock-rotate-left"></i>
+            </div>
+            <strong style="color: var(--neon-red); font-size: 0.95rem; margin-bottom: 4px;">MÃ QR ĐÃ HẾT HẠN</strong>
+            <p style="font-size: 0.78rem; color: #cbd5e1; margin: 0 0 12px; line-height: 1.4;">
+              Vui lòng không chuyển khoản vào mã này để tránh lỗi đơn hàng.
+            </p>
+            <button type="button" class="btn btn-cyan btn-sm btn-renew-qr-code" style="font-size: 0.8rem; padding: 6px 14px;">
+              <i class="fa-solid fa-arrow-rotate-right"></i> Tạo lại mã QR mới
+            </button>
+          `;
+          qrBox.appendChild(expiredOverlay);
+
+          const btnRenew = expiredOverlay.querySelector('.btn-renew-qr-code');
+          if (btnRenew) {
+            btnRenew.addEventListener('click', () => {
+              showToast('Đang làm mới phiên thanh toán...', 'info');
+              this.renderDynamicPaymentScreen(container, orderData);
+            });
+          }
+        }
+
+        // Cập nhật thanh thông báo trạng thái
+        const pollingBar = container.querySelector('#pay-polling-bar');
+        if (pollingBar) {
+          pollingBar.innerHTML = `
+            <i class="fa-solid fa-circle-exclamation" style="color: var(--neon-red);"></i>
+            <span style="color: #ff8099;">Phiên thanh toán đã hết hạn. Hãy gia hạn hoặc hủy đơn để giải phóng giỏ hàng.</span>
+          `;
+        }
+
+        // Cập nhật nhóm nút thao tác
+        const actionsGroup = container.querySelector('.payment-actions-group');
+        if (actionsGroup) {
+          actionsGroup.innerHTML = `
+            <button type="button" class="btn btn-primary btn-sm" id="btn-renew-payment-action" style="width: 100%;">
+              <i class="fa-solid fa-arrow-rotate-right"></i> Gia Hạn Thanh Toán (Thêm 15 Phút)
+            </button>
+            <button type="button" class="btn btn-outline btn-sm" id="btn-cancel-expired-order" style="width: 100%; border-color: var(--neon-red); color: var(--neon-red);">
+              <i class="fa-solid fa-ban"></i> Hủy Đơn Hàng Này (Hoàn Kho)
+            </button>
+            <button type="button" class="btn-simulate-pay" id="btn-simulate-pay" style="width: 100%;">
+              <i class="fa-solid fa-bolt-lightning"></i> ⚡ Tôi Đã Chuyển Tiền Thành Công (Demo)
+            </button>
+          `;
+
+          const btnRenewAction = actionsGroup.querySelector('#btn-renew-payment-action');
+          if (btnRenewAction) {
+            btnRenewAction.addEventListener('click', () => {
+              showToast('Đang gia hạn phiên thanh toán...', 'info');
+              this.renderDynamicPaymentScreen(container, orderData);
+            });
+          }
+
+          const btnCancelAction = actionsGroup.querySelector('#btn-cancel-expired-order');
+          if (btnCancelAction) {
+            btnCancelAction.addEventListener('click', async () => {
+              if (!confirm(`Xác nhận hủy đơn hàng ${orderCode}?`)) return;
+              try {
+                await api.cancelUserOrder(orderCode, 'Hết hạn thanh toán trực tuyến');
+                showToast('Đã hủy đơn hàng và hoàn lại tồn kho thành công!', 'info');
+                container.innerHTML = `
+                  <div class="glass-panel" style="padding: 30px 16px; text-align: center;">
+                    <i class="fa-solid fa-circle-xmark fa-2x" style="color: var(--neon-red); margin-bottom: 10px;"></i>
+                    <h4 style="color: #fff; margin-bottom: 6px;">Đơn Hàng Đã Hủy</h4>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 14px;">Đơn hàng ${orderCode} đã được hủy do hết hạn thanh toán.</p>
+                    <a href="#shop" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer();">
+                      Tiếp tục mua sắm
+                    </a>
+                  </div>
+                `;
+              } catch (err) {
+                showToast('Lỗi hủy đơn: ' + err.message, 'error');
+              }
+            });
+          }
+
+          const btnSimAction = actionsGroup.querySelector('#btn-simulate-pay');
+          if (btnSimAction) {
+            btnSimAction.addEventListener('click', () => {
+              this.handleConfirmPayment(orderCode, container);
+            });
+          }
+        }
+
+        showToast('Đã hết thời hạn thanh toán đơn hàng. Vui lòng gia hạn hoặc tạo mã mới!', 'warning');
+        return;
+      }
+
+      const mins = Math.floor(remainingSeconds / 60);
+      const secs = remainingSeconds % 60;
+      const str = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+      if (digitsElem) digitsElem.textContent = str;
+
+      if (remainingSeconds < 180 && countdownBox) {
+        countdownBox.classList.add('warning');
+      }
+    }, 1000);
+
+    // 2. Khởi động Polling tự động kiểm tra trạng thái thanh toán mỗi 3.5 giây
+    this.paymentPollingInterval = setInterval(async () => {
+      try {
+        const statusRes = await api.getOrderPaymentStatus(orderCode);
+        if (statusRes.success && statusRes.data && statusRes.data.is_paid) {
+          this.clearPaymentTimers();
+          showToast('🎉 Nhận diện thanh toán thành công!', 'success');
+          this.renderPaymentSuccessScreen(container, {
+            order_code: orderCode,
+            total_amount: amount
+          });
+        }
+      } catch (pollErr) {
+        // Polling im lặng
+      }
+    }, 3500);
+
+    // 3. Gắn sự kiện nút "Tôi đã chuyển khoản xong"
+    const btnManualCheck = container.querySelector('#btn-manual-check-pay');
+    if (btnManualCheck) {
+      btnManualCheck.addEventListener('click', async () => {
+        btnManualCheck.disabled = true;
+        btnManualCheck.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang đối soát giao dịch...';
+        try {
+          const res = await api.getOrderPaymentStatus(orderCode);
+          if (res.success && res.data && res.data.is_paid) {
+            this.clearPaymentTimers();
+            showToast('Đơn hàng đã được thanh toán!', 'success');
+            this.renderPaymentSuccessScreen(container, {
+              order_code: orderCode,
+              total_amount: amount
+            });
+          } else {
+            showToast('Hệ thống chưa ghi nhận tiền vào tài khoản. Nếu đã chuyển, vui lòng chờ trong giây lát hoặc bấm nút "Xác Nhận Ngay (Demo)" bên dưới!', 'info');
+            btnManualCheck.disabled = false;
+            btnManualCheck.innerHTML = '<i class="fa-solid fa-rotate"></i> Tôi Đã Chuyển Khoản Xong';
+          }
+        } catch (err) {
+          btnManualCheck.disabled = false;
+          btnManualCheck.innerHTML = '<i class="fa-solid fa-rotate"></i> Tôi Đã Chuyển Khoản Xong';
+          showToast('Lỗi kiểm tra: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // 4. Gắn sự kiện nút "⚡ Xác Nhận Thanh Toán Ngay (Demo / Kiểm thử)"
+    const btnSimulate = container.querySelector('#btn-simulate-pay');
+    if (btnSimulate) {
+      btnSimulate.addEventListener('click', () => {
+        this.handleConfirmPayment(orderCode, container);
+      });
+    }
   },
 
   renderCartDrawerContent(isCheckoutMode = false) {
@@ -988,11 +1442,10 @@ const app = {
             <input type="text" id="order-address" class="form-control" placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Phương thức thanh toán</label>
+            <label class="form-label">Phương thức thanh toán *</label>
             <select id="order-payment" class="form-control">
+              <option value="banking" selected>Chuyển khoản VietQR Pro (Mã QR Động 24/7 - Quét bằng mọi Ngân hàng & Ví MoMo, ZaloPay)</option>
               <option value="cod">Thanh toán khi nhận hàng (COD)</option>
-              <option value="banking">Chuyển khoản ngân hàng (VietQR Pay)</option>
-              <option value="momo">Ví điện tử MoMo (Quét mã MoMo QR động)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1064,96 +1517,71 @@ const app = {
           // Hiển thị màn hình thành công
           const isBanking = res.data.payment_method === 'banking';
           const isMomo = res.data.payment_method === 'momo';
-          const vietQrUrl = 'assets/images/qr_vietqr.png';
-          const momoQrUrl = 'assets/images/qr_momo.png';
 
-          body.innerHTML = `
-            <div style="text-align: center; padding: 24px 10px;">
-              <div class="cat-icon-wrap" style="color: var(--neon-green); width: 68px; height: 68px; margin: 0 auto 12px;">
-                <i class="fa-solid fa-circle-check fa-2x"></i>
-              </div>
-              <h2 style="font-size: 1.4rem; margin-bottom: 6px;">Đặt Hàng Thành Công!</h2>
-              <p style="color: var(--text-muted); font-size: 0.88rem;">Cảm ơn bạn đã tin tưởng SportZone.</p>
-              
-              <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-md); margin: 16px 0; border: 1px dashed var(--neon-cyan);">
-                <div style="font-size: 0.8rem; color: var(--text-muted);">MÃ ĐƠN HÀNG CỦA BẠN:</div>
-                <strong style="font-size: 1.25rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${res.data.order_code}</strong>
-                <div style="font-size: 0.85rem; color: #fff; margin-top: 4px;">Tổng thanh toán: <strong style="color: var(--neon-green);">${formatVND(res.data.total_amount)}</strong></div>
-              </div>
-
-              ${isBanking ? `
-                <div class="vietqr-card">
-                  <div style="font-weight: 800; color: var(--neon-cyan); font-size: 0.95rem; margin-bottom: 4px;">
-                    <i class="fa-solid fa-qrcode"></i> QUÉT MÃ VIETQR ĐỂ THANH TOÁN
-                  </div>
-                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">Mở app ngân hàng bất kỳ để quét mã chuyển khoản:</p>
-                  
-                  <img src="${vietQrUrl}" class="vietqr-img" alt="VietQR Techcombank Sportzone ${res.data.order_code}">
-
-                  <div class="vietqr-copy-row">
-                    <span>Ngân hàng: <strong>Techcombank</strong></span>
-                  </div>
-                  <div class="vietqr-copy-row">
-                    <span>Số tài khoản: <strong>1907 2002 4640 14</strong></span>
-                    <button class="btn-copy" onclick="navigator.clipboard.writeText('19072002464014'); showToast('Đã copy số tài khoản!', 'info');">Copy</button>
-                  </div>
-                  <div class="vietqr-copy-row">
-                    <span>Tên tài khoản: <strong>Sportzone</strong></span>
-                    <button class="btn-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
-                  </div>
-                  <div class="vietqr-copy-row">
-                    <span>Số tiền: <strong style="color: var(--neon-green);">${formatVND(res.data.total_amount)}</strong></span>
-                    <button class="btn-copy" onclick="navigator.clipboard.writeText('${res.data.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
-                  </div>
-                  <div class="vietqr-copy-row">
-                    <span>Nội dung CK: <strong style="color: var(--neon-cyan);">${res.data.order_code}</strong></span>
-                    <button class="btn-copy" onclick="navigator.clipboard.writeText('${res.data.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
-                  </div>
+          if (isBanking || isMomo) {
+            body.innerHTML = `
+              <div style="text-align: center; padding: 12px 6px;">
+                <div class="cat-icon-wrap" style="color: var(--neon-green); width: 60px; height: 60px; margin: 0 auto 10px;">
+                  <i class="fa-solid fa-circle-check fa-2x"></i>
                 </div>
-              ` : ''}
+                <h2 style="font-size: 1.35rem; margin-bottom: 4px;">Đặt Hàng Thành Công!</h2>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Cảm ơn bạn đã tin tưởng SportZone. Vui lòng thanh toán để đơn hàng được gửi đi ngay.</p>
+                
+                <div style="background: var(--bg-card); padding: 12px; border-radius: var(--radius-md); margin-bottom: 12px; border: 1px dashed var(--neon-cyan);">
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">MÃ ĐƠN HÀNG:</div>
+                  <strong style="font-size: 1.25rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${res.data.order_code}</strong>
+                  <div style="font-size: 0.85rem; color: #fff; margin-top: 4px;">Tổng thanh toán: <strong style="color: var(--neon-green); font-size: 1.05rem;">${formatVND(res.data.total_amount)}</strong></div>
+                </div>
 
-              ${isMomo ? `
-                <div class="momo-card">
-                  <div class="momo-header">
-                    <i class="fa-solid fa-wallet"></i> THANH TOÁN VÍ MOMO QR
-                    <span class="momo-badge">MoMo QR</span>
-                  </div>
-                  <p style="font-size: 0.8rem; color: #ffb8da; margin-bottom: 10px;">Mở ứng dụng MoMo và quét mã bên dưới để thanh toán:</p>
-                  
-                  <img src="${momoQrUrl}" class="momo-img" alt="MoMo QR Sportzone ${res.data.order_code}">
+                <div id="drawer-dynamic-payment-box"></div>
 
-                  <div class="momo-copy-row">
-                    <span>Tên tài khoản: <strong>Sportzone</strong></span>
-                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
-                  </div>
-                  <div class="momo-copy-row">
-                    <span>Ví nhận: <strong>Ví MoMo Sportzone</strong></span>
-                  </div>
-                  <div class="momo-copy-row">
-                    <span>Số tiền: <strong style="color: #ff3e98; font-size: 1rem;">${formatVND(res.data.total_amount)}</strong></span>
-                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${res.data.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
-                  </div>
-                  <div class="momo-copy-row">
-                    <span>Nội dung: <strong style="color: #ff5da8;">${res.data.order_code}</strong></span>
-                    <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${res.data.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
-                  </div>
-                  
-                  <a href="momo://?action=payWithApp&amount=${res.data.total_amount}&note=${encodeURIComponent(res.data.order_code)}" class="btn-momo-app">
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở App MoMo Để Thanh Toán
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 14px;">
+                  <a href="#tracking?code=${res.data.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer()">
+                    <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Hành Trình Đơn Hàng
+                  </a>
+                  <a href="#profile" class="btn btn-outline btn-sm" onclick="app.closeCartDrawer()">
+                    <i class="fa-solid fa-user-circle"></i> Xem Trong Đơn Hàng Của Tôi
                   </a>
                 </div>
-              ` : ''}
-
-              <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
-                <a href="#tracking?code=${res.data.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer()">
-                  <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Hành Trình Đơn Hàng
-                </a>
-                <a href="#profile" class="btn btn-outline btn-sm" onclick="app.closeCartDrawer()">
-                  <i class="fa-solid fa-user-circle"></i> Xem Trong Đơn Hàng Của Tôi
-                </a>
               </div>
-            </div>
-          `;
+            `;
+            footer.style.display = 'none';
+            const payBox = body.querySelector('#drawer-dynamic-payment-box');
+            if (payBox) {
+              this.renderDynamicPaymentScreen(payBox, res.data);
+            }
+          } else {
+            // COD
+            body.innerHTML = `
+              <div style="text-align: center; padding: 24px 10px;">
+                <div class="cat-icon-wrap" style="color: var(--neon-green); width: 68px; height: 68px; margin: 0 auto 12px;">
+                  <i class="fa-solid fa-circle-check fa-2x"></i>
+                </div>
+                <h2 style="font-size: 1.4rem; margin-bottom: 6px;">Đặt Hàng Thành Công!</h2>
+                <p style="color: var(--text-muted); font-size: 0.88rem;">Cảm ơn bạn đã tin tưởng SportZone.</p>
+                
+                <div style="background: var(--bg-card); padding: 14px; border-radius: var(--radius-md); margin: 16px 0; border: 1px dashed var(--neon-cyan);">
+                  <div style="font-size: 0.8rem; color: var(--text-muted);">MÃ ĐƠN HÀNG CỦA BẠN:</div>
+                  <strong style="font-size: 1.25rem; color: var(--neon-cyan); letter-spacing: 0.05em;">${res.data.order_code}</strong>
+                  <div style="font-size: 0.85rem; color: #fff; margin-top: 4px;">Tổng thanh toán COD: <strong style="color: var(--neon-green);">${formatVND(res.data.total_amount)}</strong></div>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-md); font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+                  <i class="fa-solid fa-truck" style="color: var(--neon-cyan);"></i> Đơn hàng chọn hình thức thanh toán khi nhận hàng (COD). Nhân viên sẽ liên hệ xác nhận trước khi giao hàng.
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
+                  <a href="#tracking?code=${res.data.order_code}" class="btn btn-cyan btn-sm" onclick="app.closeCartDrawer()">
+                    <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Hành Trình Đơn Hàng
+                  </a>
+                  <a href="#profile" class="btn btn-outline btn-sm" onclick="app.closeCartDrawer()">
+                    <i class="fa-solid fa-user-circle"></i> Xem Trong Đơn Hàng Của Tôi
+                  </a>
+                </div>
+              </div>
+            `;
+            footer.style.display = 'none';
+          }
           footer.style.display = 'none';
 
         } catch (err) {
@@ -1262,70 +1690,18 @@ const app = {
             `).join('')}
           </div>
 
-          ${order.payment_status === 'unpaid' && order.payment_method === 'momo' ? `
-            <div class="momo-card" style="margin-top: 24px;">
-              <div class="momo-header">
-                <i class="fa-solid fa-wallet"></i> MÃ MOMO QR THANH TOÁN ĐƠN HÀNG
-                <span class="momo-badge">MoMo QR</span>
-              </div>
-              <p style="font-size: 0.8rem; color: #ffb8da; margin-bottom: 10px;">Đơn hàng chưa được thanh toán. Quét mã bên dưới để hoàn tất:</p>
-              
-              <img src="assets/images/qr_momo.png" class="momo-img" alt="MoMo QR Sportzone ${order.order_code}">
-
-              <div class="momo-copy-row">
-                <span>Tên tài khoản: <strong>Sportzone</strong></span>
-                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
-              </div>
-              <div class="momo-copy-row">
-                <span>Ví nhận: <strong>Ví MoMo Sportzone</strong></span>
-              </div>
-              <div class="momo-copy-row">
-                <span>Số tiền: <strong style="color: #ff3e98; font-size: 1rem;">${formatVND(order.total_amount)}</strong></span>
-                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${order.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
-              </div>
-              <div class="momo-copy-row">
-                <span>Nội dung: <strong style="color: #ff5da8;">${order.order_code}</strong></span>
-                <button class="btn-momo-copy" onclick="navigator.clipboard.writeText('${order.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
-              </div>
-              
-              <a href="momo://?action=payWithApp&amount=${order.total_amount}&note=${encodeURIComponent(order.order_code)}" class="btn-momo-app">
-                <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở App MoMo Để Thanh Toán
-              </a>
-            </div>
-          ` : ''}
-
-          ${order.payment_status === 'unpaid' && order.payment_method === 'banking' ? `
-            <div class="vietqr-card" style="margin-top: 24px;">
-              <div style="font-weight: 800; color: var(--neon-cyan); font-size: 0.95rem; margin-bottom: 4px;">
-                <i class="fa-solid fa-qrcode"></i> QUÉT MÃ VIETQR ĐỂ THANH TOÁN
-              </div>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px;">Đơn hàng chưa thanh toán. Quét mã bằng app ngân hàng để chuyển khoản:</p>
-              
-              <img src="assets/images/qr_vietqr.png" class="vietqr-img" alt="VietQR Techcombank Sportzone ${order.order_code}">
-
-              <div class="vietqr-copy-row">
-                <span>Ngân hàng: <strong>Techcombank</strong></span>
-              </div>
-              <div class="vietqr-copy-row">
-                <span>Số tài khoản: <strong>1907 2002 4640 14</strong></span>
-                <button class="btn-copy" onclick="navigator.clipboard.writeText('19072002464014'); showToast('Đã copy số tài khoản!', 'info');">Copy</button>
-              </div>
-              <div class="vietqr-copy-row">
-                <span>Tên tài khoản: <strong>Sportzone</strong></span>
-                <button class="btn-copy" onclick="navigator.clipboard.writeText('Sportzone'); showToast('Đã copy tên tài khoản!', 'info');">Copy</button>
-              </div>
-              <div class="vietqr-copy-row">
-                <span>Số tiền: <strong style="color: var(--neon-green);">${formatVND(order.total_amount)}</strong></span>
-                <button class="btn-copy" onclick="navigator.clipboard.writeText('${order.total_amount}'); showToast('Đã copy số tiền!', 'info');">Copy</button>
-              </div>
-              <div class="vietqr-copy-row">
-                <span>Nội dung CK: <strong style="color: var(--neon-cyan);">${order.order_code}</strong></span>
-                <button class="btn-copy" onclick="navigator.clipboard.writeText('${order.order_code}'); showToast('Đã copy mã đơn!', 'info');">Copy</button>
-              </div>
-            </div>
+          ${order.payment_status === 'unpaid' && (order.payment_method === 'banking' || order.payment_method === 'momo') ? `
+            <div id="tracking-dynamic-qr-box" style="margin-top: 24px;"></div>
           ` : ''}
         </div>
       `;
+
+      if (order.payment_status === 'unpaid' && (order.payment_method === 'banking' || order.payment_method === 'momo')) {
+        const qrBox = container.querySelector('#tracking-dynamic-qr-box');
+        if (qrBox) {
+          this.renderDynamicPaymentScreen(qrBox, order);
+        }
+      }
 
     } catch (err) {
       container.innerHTML = `
@@ -1715,6 +2091,12 @@ const app = {
 
               <!-- Nút hành động -->
               <div style="display: flex; justify-content: flex-end; gap: 10px; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 14px;">
+                ${ord.payment_status === 'unpaid' && (ord.payment_method === 'banking' || ord.payment_method === 'momo') && ord.order_status !== 'cancelled' ? `
+                  <a href="#tracking?code=${ord.order_code}" class="btn btn-cyan btn-sm">
+                    <i class="fa-solid fa-qrcode"></i> Thanh Toán QR Ngay
+                  </a>
+                ` : ''}
+
                 <a href="#tracking?code=${ord.order_code}" class="btn btn-outline btn-sm">
                   <i class="fa-solid fa-truck-ramp-box"></i> Tra Cứu Vận Chuyển
                 </a>
